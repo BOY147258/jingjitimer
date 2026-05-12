@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#080810">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="竞迹">
+  <meta http-equiv="Feature-Policy" content="camera *; microphone *">
+  <meta http-equiv="Permissions-Policy" content="camera=*, microphone=*">
+  <title>竞迹 · 精准计时</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Loading ─────────────────────────────────────── -->
+  <div id="loading" class="overlay">
+    <div class="loader-box">
+      <div class="pulse-ring"></div>
+      <div class="loader-icon" style="font-size:36px;font-weight:800;color:#ff6200;letter-spacing:4px">竞迹</div>
+      <div class="loader-title" style="font-size:13px;letter-spacing:2px;margin-top:4px">精准计时 · 智能田径</div>
+      <div class="loader-sub">正在初始化...</div>
+    </div>
+  </div>
+
+  <!-- ── Role Selection ──────────────────────────────── -->
+  <div id="role-overlay" class="overlay hidden">
+    <div class="perm-card role-card">
+      <div class="role-header" style="font-size:26px;font-weight:800;color:#ff6200;letter-spacing:3px">竞迹</div>
+      <div class="role-sub">选择设备角色</div>
+
+      <button class="role-btn" id="btn-role-solo">
+        <div class="role-icon">📱</div>
+        <div class="role-info">
+          <div class="role-name">单机模式</div>
+          <div class="role-desc">一台设备 · 手动记录终点</div>
+        </div>
+      </button>
+
+      <button class="role-btn" id="btn-role-start">
+        <div class="role-icon">🔫</div>
+        <div class="role-info">
+          <div class="role-name">发令端</div>
+          <div class="role-desc">检测枪声 · 控制计时开始</div>
+        </div>
+      </button>
+
+      <button class="role-btn" id="btn-role-finish">
+        <div class="role-icon">🏁</div>
+        <div class="role-info">
+          <div class="role-name">终点端</div>
+          <div class="role-desc">AI 自动识别冲线 · 慢动作回放</div>
+        </div>
+      </button>
+
+      <!-- Room code (shown for start/finish roles) -->
+      <div id="room-panel" class="room-panel hidden">
+        <div class="room-divider">连接配对</div>
+
+        <!-- Start device: set own room code -->
+        <div id="room-code-set-wrap" class="hidden">
+          <label class="room-label">设置房间码<span class="room-label-hint">（4位，告知所有终点端）</span></label>
+          <div class="room-code-set-row">
+            <input type="text" id="room-code-set" class="room-code-input" maxlength="6"
+              placeholder="自定义" inputmode="numeric" pattern="[0-9]*">
+            <button id="btn-room-suggest" class="btn btn-ghost btn-sm">随机</button>
+          </div>
+        </div>
+
+        <!-- Finish device: enter room code -->
+        <div id="room-code-input-wrap" class="hidden">
+          <label class="room-label">输入发令端房间码</label>
+          <input type="text" id="room-code-input" class="room-code-input" maxlength="6"
+            placeholder="与发令端相同" inputmode="numeric" pattern="[0-9]*">
+        </div>
+
+        <div id="room-status" class="room-status">未连接</div>
+        <button id="btn-connect" class="btn btn-primary btn-full mt-8">连接到比赛</button>
+      </div>
+
+      <button id="btn-role-confirm" class="btn btn-primary btn-full btn-large mt-12 hidden">
+        确认 →
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Permission ─────────────────────────────────────
+       已改为自动请求，此 overlay 仅在极少数需要重试时显示 -->
+  <div id="perm-overlay" class="overlay hidden">
+    <div class="perm-card">
+      <div class="perm-icons">🎤 &nbsp; 📹</div>
+      <h2>正在请求权限</h2>
+      <p>请在弹窗中点击<b>允许</b>，授权摄像头和麦克风</p>
+      <p style="margin-top:8px;font-size:12px;color:#555">iOS用Safari，安卓用Chrome</p>
+      <button id="btn-grant-all" class="btn btn-primary btn-large mt-16">重新请求权限</button>
+      <button id="btn-skip-perm" class="btn btn-ghost mt-8">跳过（仅手动计时）</button>
+      <button id="btn-grant-mic" class="btn btn-ghost mt-4" style="display:none"></button>
+    </div>
+  </div>
+
+  <!-- ── Toast ───────────────────────────────────────── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ── Header ──────────────────────────────────────── -->
+  <header class="app-header">
+    <span class="app-title" id="app-title"><span class="brand-jj">竞迹</span></span>
+    <div class="header-status">
+      <div id="finish-count-badge" class="finish-count-badge hidden"></div>
+      <div id="sync-badge" class="sync-badge hidden">📡 <span id="sync-room">—</span></div>
+      <div class="status-pill" id="pill-mic"><span class="dot"></span><span class="label">MIC</span></div>
+      <div class="status-pill" id="pill-cam"><span class="dot"></span><span class="label">CAM</span></div>
+    </div>
+  </header>
+
+  <!-- ── Tab Bar (start/solo) ─────────────────────────── -->
+  <nav class="tab-bar" id="tab-bar-start">
+    <button class="tab-btn active" data-tab="setup">⚙️ 设置</button>
+    <button class="tab-btn" data-tab="race">🏁 比赛</button>
+    <button class="tab-btn" data-tab="results">📊 成绩</button>
+  </nav>
+
+  <!-- Finish device: no tab bar, just fullscreen -->
+
+  <!-- ════════════════════════════════════════════════════
+       START / SOLO DEVICE TABS
+       ════════════════════════════════════════════════════ -->
+
+  <!-- ── Setup Tab ────────────────────────────────────── -->
+  <section class="tab-pane" id="tab-setup">
+    <div class="card">
+      <div class="card-title">📋 比赛信息</div>
+      <div class="form-row">
+        <label>比赛名称</label>
+        <input type="text" id="race-name" value="田径比赛" placeholder="如：100米决赛">
+      </div>
+      <div class="form-row">
+        <label>运动员数量</label>
+        <div class="stepper">
+          <button class="step-btn" id="btn-lane-minus">−</button>
+          <span id="lane-count-display">4</span>
+          <button class="step-btn" id="btn-lane-plus">+</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>圈数</label>
+        <div class="stepper">
+          <button class="step-btn" id="btn-lap-minus">−</button>
+          <span id="lap-count-display">1</span>
+          <button class="step-btn" id="btn-lap-plus">+</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>轮次 / 组别</label>
+        <div class="round-group-row">
+          <div class="rg-item">
+            <span class="rg-label">第</span>
+            <button class="step-btn" id="btn-round-minus">−</button>
+            <span id="round-display">1</span>
+            <button class="step-btn" id="btn-round-plus">+</button>
+            <span class="rg-label">轮</span>
+          </div>
+          <div class="rg-item">
+            <span class="rg-label">第</span>
+            <button class="step-btn" id="btn-group-minus">−</button>
+            <span id="group-display">1</span>
+            <button class="step-btn" id="btn-group-plus">+</button>
+            <span class="rg-label">组</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>关联赛事</label>
+        <select id="setup-meet-select"></select>
+      </div>
+      <div class="form-row hidden" id="event-select-row">
+        <label>关联项目</label>
+        <select id="setup-event-select"></select>
+      </div>
+    </div>
+
+    <div class="card" id="card-athletes">
+      <div class="card-title">🏃 运动员名单</div>
+      <div id="lane-inputs"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🎤 发令方式</div>
+      <div class="radio-group">
+        <label class="radio-opt">
+          <input type="radio" name="start-mode" value="manual" checked>
+          <div class="radio-body">
+            <div class="radio-name">手动发令</div>
+            <div class="radio-desc">点击按钮启动计时</div>
+          </div>
+        </label>
+        <label class="radio-opt">
+          <input type="radio" name="start-mode" value="audio">
+          <div class="radio-body">
+            <div class="radio-name">声音自动检测</div>
+            <div class="radio-desc">枪声/哨声触发计时</div>
+          </div>
+        </label>
+      </div>
+      <div id="audio-sens-panel" class="hidden mt-12">
+        <div class="form-row">
+          <label>灵敏度 <b id="sens-val">75</b>%</label>
+          <input type="range" id="sensitivity" min="5" max="98" value="75" class="slider">
+        </div>
+        <div class="audio-monitor-box">
+          <div class="monitor-label">实时音量监测</div>
+          <div class="level-track">
+            <div id="level-fill" class="level-fill"></div>
+            <div id="level-line" class="level-line"></div>
+          </div>
+          <div class="monitor-hint" id="monitor-status">⏸ 未激活</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📹 录像设置</div>
+      <div class="toggle-row">
+        <span>启用比赛录像</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="chk-video" checked>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div id="cam-preview-box" class="cam-preview-box mt-12">
+        <video id="setup-video" autoplay muted playsinline class="preview-video"></video>
+        <div id="cam-placeholder" class="cam-placeholder">📹<br><span>摄像头预览</span></div>
+      </div>
+      <button id="btn-flip-cam" class="btn btn-ghost btn-sm mt-8 hidden">🔄 切换前/后摄像头</button>
+    </div>
+
+    <button id="btn-enter-race" class="btn btn-primary btn-full btn-large">进入比赛 →</button>
+  </section>
+
+  <!-- ── Race Tab ──────────────────────────────────────── -->
+  <section class="tab-pane hidden" id="tab-race">
+    <div class="race-cam-wrap">
+      <video id="race-video" autoplay muted playsinline class="race-video"></video>
+      <div id="rec-badge" class="rec-badge hidden">● REC</div>
+      <div id="cam-off-msg" class="cam-off-msg">📹 录像未启用</div>
+    </div>
+
+    <div class="timer-wrap">
+      <div id="timer-display" class="timer-display">00:00.00</div>
+      <div id="timer-sub" class="timer-sub">准备就绪</div>
+    </div>
+
+    <div id="visualizer-wrap" class="visualizer-wrap hidden">
+      <canvas id="visualizer" width="360" height="52"></canvas>
+      <div id="vis-label" class="vis-label">🎤 监听发令声...</div>
+    </div>
+
+    <div class="race-ctrl">
+      <button id="btn-race-start" class="btn btn-start">🚀 发令 / 开始</button>
+      <div class="ctrl-row">
+        <button id="btn-race-stop"  class="btn btn-stop hidden">⏹ 停止计时</button>
+        <button id="btn-race-reset" class="btn btn-reset">↺ 重置</button>
+      </div>
+    </div>
+
+    <div id="lanes-wrap" class="lanes-wrap"></div>
+  </section>
+
+  <!-- ── Results Tab ──────────────────────────────────── -->
+  <section class="tab-pane hidden" id="tab-results">
+    <div id="results-current" class="card hidden">
+      <div class="card-title" id="results-race-title">最近比赛成绩</div>
+      <div id="results-meta" class="results-meta"></div>
+      <div id="results-table-wrap"></div>
+    </div>
+
+    <div id="video-replay-card" class="card hidden">
+      <div class="card-title">📹 比赛回放</div>
+      <video id="replay-video" controls class="replay-video"></video>
+      <button id="btn-dl-video" class="btn btn-secondary btn-full mt-8">⬇️ 下载视频</button>
+    </div>
+
+    <div class="card-actions">
+      <button id="btn-export-csv" class="btn btn-secondary">📋 导出成绩</button>
+      <button id="btn-clear-results" class="btn btn-danger">🗑️ 清除</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📚 历史记录</div>
+      <div id="history-list"><p class="hint-text">暂无历史成绩</p></div>
+    </div>
+
+    <a href="/admin" class="admin-link">⚙️ 打开管理后台（电脑端）</a>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════
+       FINISH DEVICE — fullscreen single-view
+       ════════════════════════════════════════════════════ -->
+  <section class="fs-finish hidden" id="tab-finish-main">
+
+    <!-- Fullscreen camera feed -->
+    <video id="finish-video-fs" autoplay muted playsinline class="fs-video"></video>
+
+    <!-- Finish line detection overlay (draggable) -->
+    <canvas id="finish-canvas-fs" class="fs-canvas"></canvas>
+
+    <!-- Top bar: connection dot + state label + settings gear -->
+    <div class="fs-topbar">
+      <div class="fs-conn-row">
+        <span class="fs-conn-dot" id="fs-conn-dot"></span>
+        <span id="fs-state-label" class="fs-state-label">等待连接...</span>
+      </div>
+      <div class="fs-rec-dot hidden" id="fs-rec-dot">● REC</div>
+      <button class="fs-gear-btn" id="btn-fs-settings" aria-label="设置">⚙</button>
+    </div>
+
+    <!-- Right-side result cards (slide in as athletes cross) -->
+    <div class="fs-results" id="fs-results"></div>
+
+    <!-- Tiny manual backup button (bottom-left) -->
+    <button id="btn-fs-manual" class="fs-manual-btn" disabled>手动</button>
+
+    <!-- End-of-race fullscreen overlay -->
+    <div class="fs-end hidden" id="fs-end">
+      <div class="fs-end-inner">
+        <div class="fs-end-title">比赛结束</div>
+        <div class="fs-end-list" id="fs-end-list"></div>
+        <div class="fs-end-actions">
+          <button id="btn-fs-next-group" class="btn btn-primary">下一组</button>
+          <button id="btn-fs-download"   class="btn btn-secondary">下载视频</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings slide-up panel -->
+    <div class="fs-settings-panel hidden" id="fs-settings-panel">
+      <div class="fs-panel-handle"></div>
+      <div class="fs-panel-title">检测设置</div>
+      <div class="form-row">
+        <label>灵敏度 <b id="fs-sens-val">50</b></label>
+        <input type="range" id="fs-sensitivity" min="5" max="80" value="20" class="slider">
+      </div>
+      <div class="audio-monitor-box" style="margin-top:10px">
+        <div class="monitor-label">终点线动作检测</div>
+        <div class="level-track">
+          <div id="fs-level-fill" class="level-fill" style="background:linear-gradient(90deg,#00e676,#ffd600,#ff1744)"></div>
+        </div>
+        <div class="monitor-hint" id="fs-detect-status">等待摄像头...</div>
+      </div>
+      <button id="btn-fs-flip" class="btn btn-ghost btn-sm mt-8" style="width:100%">🔄 切换前/后摄像头</button>
+      <button id="btn-fs-settings-close" class="btn btn-ghost mt-8" style="width:100%">关闭</button>
+    </div>
+
+  </section>
+
+</div><!-- #app -->
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

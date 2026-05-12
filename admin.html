@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>竞迹管理后台</title>
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+<nav class="sidebar">
+  <div class="brand">
+    <span class="brand-icon">⚡</span>
+    <div><div class="brand-name">竞迹</div><div class="brand-sub">JingJi Admin</div></div>
+  </div>
+  <ul class="nav-list">
+    <li><a href="#" data-page="overview"   class="nav-link active">📊 概览</a></li>
+    <li><a href="#" data-page="meets"      class="nav-link">🏟 赛事管理</a></li>
+    <li><a href="#" data-page="events"     class="nav-link">📋 项目管理</a></li>
+    <li><a href="#" data-page="athletes"   class="nav-link">👤 运动员</a></li>
+    <li><a href="#" data-page="results"    class="nav-link">🏅 成绩查询</a></li>
+    <li><a href="#" data-page="export"     class="nav-link">📤 导出</a></li>
+  </ul>
+  <a href="/" class="sidebar-bottom">← 返回计时端</a>
+</nav>
+
+<main class="content">
+
+  <!-- ── Overview ─────────────────────────────────────── -->
+  <section id="page-overview" class="page active">
+    <h1>系统概览</h1>
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><div class="stat-val" id="st-meets">—</div><div class="stat-label">赛事</div></div>
+      <div class="stat-card"><div class="stat-val" id="st-events">—</div><div class="stat-label">项目</div></div>
+      <div class="stat-card"><div class="stat-val" id="st-athletes">—</div><div class="stat-label">运动员</div></div>
+      <div class="stat-card"><div class="stat-val" id="st-results">—</div><div class="stat-label">成绩记录</div></div>
+    </div>
+    <h2>各项目最佳成绩</h2>
+    <table class="data-table" id="best-table">
+      <thead><tr><th>项目</th><th>最佳成绩</th><th>运动员</th><th>记录数</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- ── Meets ────────────────────────────────────────── -->
+  <section id="page-meets" class="page">
+    <div class="page-header">
+      <h1>赛事管理</h1>
+      <button class="btn-primary" id="btn-add-meet">+ 新建赛事</button>
+    </div>
+    <table class="data-table" id="meets-table">
+      <thead><tr><th>赛事名称</th><th>日期</th><th>地点</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="meet-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="meet-modal-title">新建赛事</h2>
+        <label>赛事名称 <input id="meet-name" type="text" placeholder="如：2026年春季运动会"></label>
+        <label>日期 <input id="meet-date" type="date"></label>
+        <label>地点 <input id="meet-location" type="text" placeholder="如：第一运动场"></label>
+        <label>备注 <input id="meet-notes" type="text"></label>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="meet-cancel">取消</button>
+          <button class="btn-primary" id="meet-save">保存</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Events ───────────────────────────────────────── -->
+  <section id="page-events" class="page">
+    <div class="page-header">
+      <h1>项目管理</h1>
+      <div class="filter-row">
+        <select id="event-meet-filter"><option value="">— 选择赛事 —</option></select>
+        <button class="btn-primary" id="btn-add-event">+ 新建项目</button>
+      </div>
+    </div>
+    <table class="data-table" id="events-table">
+      <thead><tr><th>项目名称</th><th>距离</th><th>圈数</th><th>轮次</th><th>每轮组数</th><th>晋级名额</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="event-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="event-modal-title">新建项目</h2>
+        <label>所属赛事
+          <select id="event-meetId"></select>
+        </label>
+        <label>项目名称 <input id="event-name" type="text" placeholder="如：男子100m"></label>
+        <label>距离 <input id="event-distance" type="text" placeholder="如：100m"></label>
+        <label>圈数 <input id="event-laps" type="number" value="1" min="1" max="50"></label>
+        <label>总轮次（预赛/决赛）<input id="event-rounds" type="number" value="1" min="1" max="10"></label>
+        <label>每轮组数 <input id="event-groups" type="number" value="1" min="1" max="20"></label>
+        <label>每组晋级名额（0=全部晋级）<input id="event-advance" type="number" value="0" min="0"></label>
+        <label>性别
+          <select id="event-gender">
+            <option value="mixed">混合</option>
+            <option value="male">男子</option>
+            <option value="female">女子</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="event-cancel">取消</button>
+          <button class="btn-primary" id="event-save">保存</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Athletes ──────────────────────────────────────── -->
+  <section id="page-athletes" class="page">
+    <div class="page-header">
+      <h1>运动员管理</h1>
+      <div class="filter-row">
+        <input id="athlete-search" type="search" placeholder="姓名 / 号码 / 单位搜索…">
+        <button class="btn-primary" id="btn-add-athlete">+ 新增运动员</button>
+      </div>
+    </div>
+    <table class="data-table" id="athletes-table">
+      <thead><tr><th>姓名</th><th>号码</th><th>单位</th><th>性别</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="athlete-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="athlete-modal-title">新增运动员</h2>
+        <label>姓名 <input id="ath-name" type="text"></label>
+        <label>号码 <input id="ath-number" type="text"></label>
+        <label>单位/学校 <input id="ath-team" type="text"></label>
+        <label>性别
+          <select id="ath-gender">
+            <option value="">不限</option>
+            <option value="male">男</option>
+            <option value="female">女</option>
+          </select>
+        </label>
+        <label>出生日期 <input id="ath-dob" type="date"></label>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="ath-cancel">取消</button>
+          <button class="btn-primary" id="ath-save">保存</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Results ───────────────────────────────────────── -->
+  <section id="page-results" class="page">
+    <div class="page-header">
+      <h1>成绩查询</h1>
+      <div class="filter-row">
+        <select id="res-meet-filter"><option value="">— 赛事 —</option></select>
+        <select id="res-event-filter"><option value="">— 项目 —</option></select>
+        <select id="res-round-filter"><option value="">— 轮次 —</option></select>
+        <select id="res-group-filter"><option value="">— 组别 —</option></select>
+        <button class="btn-ghost" id="btn-rank">自动排名</button>
+      </div>
+    </div>
+    <table class="data-table" id="results-table">
+      <thead><tr><th>排名</th><th>姓名</th><th>号码</th><th>单位</th><th>道次</th><th>成绩</th><th>圈次</th><th>晋级</th><th>组别</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- ── Export ────────────────────────────────────────── -->
+  <section id="page-export" class="page">
+    <h1>数据导出</h1>
+    <div class="export-panel">
+      <div class="export-card">
+        <h3>按赛事导出</h3>
+        <select id="exp-meet"><option value="">— 选择赛事 —</option></select>
+        <button class="btn-primary" id="btn-exp-meet">下载 CSV</button>
+      </div>
+      <div class="export-card">
+        <h3>按项目导出</h3>
+        <select id="exp-event-meet"><option value="">— 先选赛事 —</option></select>
+        <select id="exp-event"><option value="">— 选择项目 —</option></select>
+        <button class="btn-primary" id="btn-exp-event">下载 CSV</button>
+      </div>
+      <div class="export-card">
+        <h3>全量导出</h3>
+        <p>导出系统内所有成绩记录</p>
+        <button class="btn-primary" id="btn-exp-all">下载全量 CSV</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/js/admin.js" type="module"></script>
+</body>
+</html>
