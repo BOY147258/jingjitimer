@@ -1,7 +1,7 @@
 import { PrecisionTimer   } from './timer.js';
 import { AudioDetector    } from './audio.js';
 import { VideoRecorder    } from './recorder.js';
-import { Sync, generateRoomCode } from './sync.js';
+import { Sync, generateRoomCode } from './sync2.js';
 import { FinishLineDetector }     from './finishline.js';
 import { ApiClient }              from './api-client.js';
 
