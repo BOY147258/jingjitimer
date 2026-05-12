@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>竞迹 — 正在连接...</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);color:#fff;flex-direction:column;gap:20px;text-align:center;padding:20px}
+h1{font-size:2.2em;font-weight:700;letter-spacing:2px}
+p{font-size:1em;opacity:0.7}
+.dot{display:inline-block;width:10px;height:10px;background:#4ade80;border-radius:50%;margin-right:8px;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.8)}}
+.error{color:#f87171}
+</style>
+</head>
+<body>
+<h1>竞迹 JingJi</h1>
+<p id="status"><span class="dot"></span>正在获取服务地址...</p>
+<p id="url" style="font-size:0.8em;opacity:0.5"></p>
+<script>
+const GIST_RAW = 'https://gist.githubusercontent.com/BOY147258/c85d672e59830aae796b28d314895bd5/raw/url.txt';
+fetch(GIST_RAW + '?_=' + Date.now())
+  .then(r => r.text())
+  .then(url => {
+    url = url.trim();
+    if (!url.startsWith('http')) throw new Error('invalid url');
+    document.getElementById('status').innerHTML = '<span class="dot"></span>连接成功，正在跳转...';
+    document.getElementById('url').textContent = url;
+    setTimeout(() => { window.location.replace(url); }, 800);
+  })
+  .catch(() => {
+    document.getElementById('status').innerHTML = '<span style="color:#f87171">⚠ 系统未启动</span>';
+    document.getElementById('url').textContent = '请先在电脑上运行"启动计时系统.bat"，再打开此页面';
+  });
+</script>
+</body>
+</html>
