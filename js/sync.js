@@ -1,15 +1,15 @@
-// Cross-device synchronization via SSE + POST relay
+// Cross-device synchronization via WebSocket
 export class Sync {
   constructor() {
-    this.room            = null;
-    this.role            = null;
-    this.clientId        = null;
-    this._offset         = 0;   // performance.now() + offset ≈ server Date.now()
-    this._sse            = null;
-    this._cbs            = new Map();
-    this.connected       = false;
-    this.peerOnline      = false;
-    this.peers           = [];  // array of { role, clientId } for all current peers
+    this.room       = null;
+    this.role       = null;
+    this.clientId   = null;
+    this._offset    = 0;   // performance.now() + offset ≈ server Date.now()
+    this._ws        = null;
+    this._cbs       = new Map();
+    this.connected  = false;
+    this.peerOnline = false;
+    this.peers      = [];  // array of { role, clientId } for all current peers
   }
 
   get finishPeerCount() {
@@ -27,7 +27,6 @@ export class Sync {
       offsets.push(serverTime - (t1 + (t4 - t1) / 2));
       if (i < attempts - 1) await new Promise(r => setTimeout(r, 40));
     }
-    // Use median to reject outliers
     offsets.sort((a, b) => a - b);
     this._offset = offsets[Math.floor(offsets.length / 2)];
   }
@@ -35,25 +34,25 @@ export class Sync {
   // Server-synchronized "now" in ms (comparable across devices)
   serverNow() { return performance.now() + this._offset; }
 
-  // Join a room and wait for SSE connection
+  // Join a room via WebSocket
   async join(room, role) {
     this.room = room;
     this.role = role;
     await this.calibrate();
 
     return new Promise((resolve, reject) => {
-      const url = `/sse?room=${encodeURIComponent(room)}&role=${encodeURIComponent(role)}`;
-      this._sse = new EventSource(url);
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url   = `${proto}//${location.host}/ws?room=${encodeURIComponent(room)}&role=${encodeURIComponent(role)}`;
+      this._ws    = new WebSocket(url);
 
-      this._sse.onmessage = e => {
+      this._ws.onmessage = e => {
         try {
           const event = JSON.parse(e.data);
 
           if (event.type === 'JOINED') {
             this.clientId   = event.clientId;
             this.connected  = true;
-            // peers is an array of role strings from the server
-            this.peers      = (event.peers || []).map((r, i) => ({ role: r, clientId: null }));
+            this.peers      = (event.peers || []).map(r => ({ role: r, clientId: null }));
             this.peerOnline = this.peers.length > 0;
             resolve(event);
           }
@@ -75,8 +74,12 @@ export class Sync {
         } catch {}
       };
 
-      this._sse.onerror = () => {
-        if (!this.connected) reject(new Error('SSE connection failed'));
+      this._ws.onerror = () => {
+        if (!this.connected) reject(new Error('WebSocket connection failed'));
+      };
+
+      this._ws.onclose = () => {
+        if (!this.connected) reject(new Error('Connection closed before joining'));
       };
 
       setTimeout(() => {
@@ -85,24 +88,11 @@ export class Sync {
     });
   }
 
-  // Send event to all peers in room
-  async send(type, data = {}) {
-    if (!this.room) return;
+  // Send event to all peers in room via WebSocket
+  send(type, data = {}) {
+    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
     const event = { type, ...data, _serverTime: this.serverNow(), _role: this.role };
-    try {
-      await fetch('/relay', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          room:        this.room,
-          event,
-          excludeSelf: true,
-          clientId:    this.clientId,
-        }),
-      });
-    } catch (e) {
-      console.warn('Relay failed:', e);
-    }
+    this._ws.send(JSON.stringify(event));
   }
 
   on(type, cb) {
@@ -111,8 +101,8 @@ export class Sync {
   }
 
   disconnect() {
-    this._sse?.close();
-    this._sse      = null;
+    this._ws?.close();
+    this._ws      = null;
     this.connected = false;
     this.peers     = [];
   }
