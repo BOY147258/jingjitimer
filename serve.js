@@ -188,8 +188,11 @@ if (tlsOptions) {
     console.log('='.repeat(60));
   });
 
-  // HTTP → redirect to HTTPS
+  // HTTP — if behind a reverse proxy (Cloudflare, Render, nginx) serve directly;
+  // if accessed locally, redirect to HTTPS
   const httpRedirect = http.createServer((req, res) => {
+    const proto = req.headers['x-forwarded-proto'] || req.headers['cf-visitor'];
+    if (proto) return handleRequest(req, res); // behind proxy, already HTTPS externally
     res.writeHead(301, { Location: `https://${ip}:${HTTPS_PORT}${req.url}` });
     res.end();
   });
