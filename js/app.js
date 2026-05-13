@@ -140,6 +140,7 @@ const DOM = {
   visLabel:       $('vis-label'),
   btnStart:       $('btn-race-start'),
   btnStop:        $('btn-race-stop'),
+  btnAbort:       $('btn-race-abort'),
   btnReset:       $('btn-race-reset'),
   lanesWrap:      $('lanes-wrap'),
   // Observer device
@@ -652,6 +653,30 @@ function registerSyncEvents() {
   sync.on('RACE_END', () => {
     if (state.role === 'finish') onFinishDeviceRaceEnd();
   });
+  sync.on('RACE_ABORT', () => {
+    if (state.role === 'finish') {
+      // Reset finish device back to waiting state
+      state.raceStarted  = false;
+      state.raceFinished = false;
+      state.laneCrossings       = {};
+      state.laneLastCrossingTime = {};
+      state.lanesDone            = 0;
+      if (DOM.fsResults) DOM.fsResults.innerHTML = '';
+      if (DOM.fsEnd)     DOM.fsEnd.classList.add('hidden');
+      if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '⚠️ 比赛召回 — 等待重新发令';
+      for (let i = 0; i < state.laneCount; i++) {
+        const btn = $(`fs-btn-done-${i}`);
+        if (btn) btn.disabled = false;
+      }
+      for (let i = 0; i < 5; i++) setTimeout(() => beep(660, 60), i * 110);
+      showToast('⚠️ 比赛召回，等待重新发令', 'warn');
+    }
+    if (state.role === 'observer') {
+      state.obsResults = [];
+      obsRenderTable();
+      obsSetState('⚠️ 比赛召回，等待重新发令');
+    }
+  });
 }
 
 // ── WeChat warning overlay ─────────────────────────────
@@ -983,6 +1008,114 @@ function markDNF(id) {
   if (state.lanes.every(l => l.time !== null || l.dnf)) setTimeout(endRace, 600);
 }
 
+// ── Race Abort (召回重来) ──────────────────────────────
+function abortRace() {
+  if (!state.raceStarted || state.raceFinished) return;
+
+  // Five rapid beeps = recall signal
+  for (let i = 0; i < 5; i++) setTimeout(() => beep(660, 60), i * 110);
+  if (navigator.vibrate) navigator.vibrate([80, 40, 80, 40, 80, 40, 80, 40, 80]);
+
+  state.raceStarted  = false;
+  state.raceFinished = false;
+  timer.stop();
+  if (recorder.recording) recorder.stop();
+
+  DOM.timerDisplay.classList.remove('running', 'stopped');
+  DOM.timerSub.textContent = '⚠️ 比赛已召回 — 等待重新发令';
+  DOM.btnStart.classList.remove('hidden');
+  DOM.btnStop.classList.add('hidden');
+  DOM.btnAbort?.classList.add('hidden');
+  DOM.recBadge.classList.add('hidden');
+
+  // Reset every lane card to pre-race state
+  state.lanes.forEach(l => {
+    l.time = null; l.rank = null; l.dnf = false;
+    l.lapTimes = []; l.currentLap = 0;
+    const card   = $(`lane-card-${l.id}`);
+    const timeEl = $(`lane-time-${l.id}`);
+    const rankEl = $(`lane-rank-${l.id}`);
+    const lapEl  = $(`lane-lap-${l.id}`);
+    const lapsEl = $(`lane-laps-${l.id}`);
+    const btn    = $(`btn-finish-${l.id}`);
+    const dnfBtn = $(`btn-dnf-${l.id}`);
+    if (card)   { card.className = 'lane-card'; card.style.animationDelay = ''; }
+    if (timeEl) { timeEl.textContent = '等待发令...'; timeEl.style.color = ''; }
+    if (rankEl) rankEl.textContent = '';
+    if (lapEl)  lapEl.textContent  = `圈 0/${state.lapCount}`;
+    if (lapsEl) lapsEl.innerHTML   = '';
+    if (btn)    { btn.disabled = true; btn.textContent = state.lapCount > 1 ? '过线' : '到达终点'; }
+    if (dnfBtn) dnfBtn.classList.add('hidden');
+  });
+
+  if (state.role === 'start') sync.send('RACE_ABORT', {});
+  showToast('⚠️ 比赛已召回，重新发令即可', 'warn');
+}
+
+// ── Close-finish arbitration (接近冲线仲裁) ───────────
+let _cfPending = null;  // { firstLane, secondLane }
+
+function showCloseFinish(firstLane, secondLane, diffMs) {
+  // Only relevant on start device (manual finish buttons)
+  if (state.role !== 'solo' && state.role !== 'start') return;
+  const lanes  = state.lanes;
+  const l1     = lanes[firstLane];
+  const l2     = lanes[secondLane];
+  if (!l1 || !l2) return;
+  if (l1.time === null || l2.time === null) return;  // both must already be recorded
+
+  _cfPending = { firstLane, secondLane };
+
+  const medals = ['🥇','🥈','🥉'];
+  const chip = (l) => `<div class="cf-lane-chip">
+    <div class="cf-rank">${medals[l.rank-1] || `#${l.rank}`}</div>
+    <div class="cf-name">${l.name}</div>
+    <div class="cf-time">${PrecisionTimer.formatFull(l.time)}</div>
+  </div>`;
+
+  const ol = $('close-finish-overlay');
+  const info = $('cf-info');
+  const lanesEl = $('cf-lanes');
+  if (!ol || !info || !lanesEl) return;
+
+  info.textContent    = `差距仅 ${diffMs}ms，请确认名次`;
+  lanesEl.innerHTML   = chip(l1) + chip(l2);
+  ol.classList.remove('hidden');
+}
+
+function hideCloseFinish() {
+  $('close-finish-overlay')?.classList.add('hidden');
+  _cfPending = null;
+}
+
+function swapCloseFinish() {
+  if (!_cfPending) return;
+  const { firstLane, secondLane } = _cfPending;
+  const l1 = state.lanes[firstLane];
+  const l2 = state.lanes[secondLane];
+  if (!l1 || !l2) { hideCloseFinish(); return; }
+
+  // Swap times and ranks
+  [l1.time, l2.time] = [l2.time, l1.time];
+  [l1.rank, l2.rank] = [l2.rank, l1.rank];
+
+  // Update lane card UI for both
+  [firstLane, secondLane].forEach(idx => {
+    const l      = state.lanes[idx];
+    const timeEl = $(`lane-time-${idx}`);
+    const rankEl = $(`lane-rank-${idx}`);
+    const card   = $(`lane-card-${idx}`);
+    if (timeEl) timeEl.textContent = PrecisionTimer.formatFull(l.time);
+    if (rankEl) rankEl.textContent = ['🥇','🥈','🥉'][l.rank-1] || `#${l.rank}`;
+    if (card)   { card.classList.toggle('gold', l.rank === 1); }
+  });
+
+  hideCloseFinish();
+  showToast('✅ 名次已交换', 'success');
+}
+
+let _lastCrossingForArb = null;  // { laneIdx, raceTime } for close-finish check
+
 // When start device receives a crossing from finish device
 function onStartDeviceReceiveCrossing(event) {
   // event: { laneIdx, raceTime, athleteName, rank }
@@ -992,6 +1125,15 @@ function onStartDeviceReceiveCrossing(event) {
 
   lane.time = event.raceTime;
   lane.rank = event.rank;
+
+  // Check for close finish with the previous crossing
+  if (_lastCrossingForArb !== null) {
+    const diffMs = Math.abs(event.raceTime - _lastCrossingForArb.raceTime);
+    if (diffMs < 300) {
+      showCloseFinish(_lastCrossingForArb.laneIdx, laneIdx, Math.round(diffMs));
+    }
+  }
+  _lastCrossingForArb = { laneIdx, raceTime: event.raceTime };
 
   const card   = $(`lane-card-${laneIdx}`);
   const timeEl = $(`lane-time-${laneIdx}`);
@@ -1050,9 +1192,10 @@ async function enterRace() {
 
 function beginRace() {
   if (state.raceStarted) return;
-  state.raceStarted = true;
+  state.raceStarted  = true;
   state.raceFinished = false;
   state.raceStartServerTime = sync.serverNow();
+  _lastCrossingForArb = null;
 
   startBeep();
   if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 200]);
@@ -1061,6 +1204,7 @@ function beginRace() {
   DOM.timerSub.textContent = '计时中...';
   DOM.btnStart.classList.add('hidden');
   DOM.btnStop.classList.remove('hidden');
+  DOM.btnAbort?.classList.remove('hidden');
 
   if (state.videoEnabled && state.camGranted && recorder.hasVideo) {
     recorder.start();
@@ -1093,6 +1237,7 @@ async function endRace() {
   DOM.timerDisplay.classList.add('stopped');
   DOM.timerSub.textContent = '比赛结束';
   DOM.btnStop.classList.add('hidden');
+  DOM.btnAbort?.classList.add('hidden');
   DOM.recBadge.classList.add('hidden');
   state.lanes.forEach(l => {
     const btn    = $(`btn-finish-${l.id}`);
@@ -1286,6 +1431,7 @@ function onFinishDeviceRaceStart(event) {
   detector.stop();
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
+  detector.onCloseFinish = null;  // finish device doesn't do arbitration (no lane cards here)
   detector.start(
     (laneIdx, perfTs) => handleFinishCrossing(laneIdx, perfTs),
     (level) => {
@@ -1886,10 +2032,17 @@ function attachEventListeners() {
   // Race controls
   DOM.btnStart.addEventListener('click',  () => { audio.resume(); beginRace(); });
   DOM.btnStop.addEventListener('click',   () => endRace());
+  DOM.btnAbort?.addEventListener('click', () => {
+    if (confirm('召回比赛？运动员返回起跑线重新来过。')) abortRace();
+  });
   DOM.btnReset.addEventListener('click',  () => {
     if (state.raceStarted && !state.raceFinished && !confirm('确定重置？当前成绩将丢失。')) return;
     resetRace();
   });
+
+  // Close-finish arbitration buttons
+  $('cf-confirm')?.addEventListener('click', () => hideCloseFinish());
+  $('cf-swap')?.addEventListener('click',    () => swapCloseFinish());
 
   // Manual crossing (backup) — pick the unfinished lane with fewest crossings
   DOM.btnFsManual?.addEventListener('click', () => {

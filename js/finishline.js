@@ -1,25 +1,27 @@
 // AI finish line detection via pixel motion analysis
 export class FinishLineDetector {
   constructor() {
-    this._video         = null;
-    this._canvas        = null;  // low-res analysis canvas
-    this._ctx           = null;
-    this._dispCanvas    = null;  // display canvas (overlay on top of video)
-    this._dispCtx       = null;
-    this._prevSlice     = null;
-    this._linePos       = 0.5;   // 0–1 fraction of video width
-    this._sliceW        = 6;     // pixel width of sample strip
-    this._threshold     = 20;    // motion threshold (0–255 avg pixel diff)
-    this._running       = false;
-    this._laneCount     = 4;
-    this._laneDividers  = [];    // Y positions (0–1) of lane boundaries, length = laneCount-1
-    this._cooldowns     = [];    // per-lane cooldown flags
-    this._lastMotion    = 0;
-    this._lastBlobs     = [];
-    this.onCrossing     = null;  // cb(laneIdx, perfTimestamp)
-    this.onLevel        = null;  // cb(level 0–1, blobsArray)
-    // Analysis canvas dimensions (kept low for performance)
-    this._W = 160;
+    this._video             = null;
+    this._canvas            = null;
+    this._ctx               = null;
+    this._dispCanvas        = null;
+    this._dispCtx           = null;
+    this._prevSlice         = null;
+    this._linePos           = 0.5;
+    this._threshold         = 20;
+    this._running           = false;
+    this._laneCount         = 4;
+    this._laneDividers      = [];
+    this._cooldowns         = [];
+    this._lastMotion        = 0;
+    this._lastBlobs         = [];
+    this._lastCrossingTs    = -Infinity;  // performance.now() of last crossing
+    this._lastCrossingLane  = -1;
+    this.onCrossing         = null;  // cb(laneIdx, perfTimestamp)
+    this.onLevel            = null;  // cb(level 0–1, blobsArray)
+    this.onCloseFinish      = null;  // cb(firstLane, secondLane, diffMs) — fired when gap < 300ms
+    // Vertical line scan: analysis canvas is narrow (just the finish strip)
+    this._W = 4;
     this._H = 90;
   }
 
@@ -54,6 +56,8 @@ export class FinishLineDetector {
     this._cooldowns  = new Array(laneCount).fill(false);
     this._resetDividers(laneCount);
 
+    this._prevSlice = null;  // reset when re-initing
+
     this._canvas = document.createElement('canvas');
     this._canvas.width  = this._W;
     this._canvas.height = this._H;
@@ -78,13 +82,16 @@ export class FinishLineDetector {
 
   _analyze() {
     if (!this._video || this._video.readyState < 2) return;
-    const W = this._W, H = this._H;
+    const W = this._W, H = this._H;  // W = 4 (vertical line scan)
 
-    this._ctx.drawImage(this._video, 0, 0, W, H);
+    // Crop source video to just the finish line strip — avoids processing entire frame
+    const vw   = this._video.videoWidth  || 640;
+    const vh   = this._video.videoHeight || 480;
+    const srcX = Math.max(0, Math.round(this._linePos * vw) - W / 2);
+    const srcW = Math.min(W, vw - srcX);
+    this._ctx.drawImage(this._video, srcX, 0, srcW, vh, 0, 0, W, H);
 
-    const lineX  = Math.floor(this._linePos * W);
-    const sliceX = Math.max(0, lineX - Math.floor(this._sliceW / 2));
-    const slice  = this._ctx.getImageData(sliceX, 0, this._sliceW, H);
+    const slice = this._ctx.getImageData(0, 0, W, H);
 
     if (!this._prevSlice) {
       this._prevSlice = new Uint8Array(slice.data.length);
@@ -92,42 +99,48 @@ export class FinishLineDetector {
       return;
     }
 
-    // Calculate motion per pixel row
+    // Motion per pixel row across the narrow strip
     const motionPerRow = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       let rowDiff = 0;
-      for (let x = 0; x < this._sliceW; x++) {
-        const i = (y * this._sliceW + x) * 4;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
         rowDiff += Math.abs(slice.data[i]   - this._prevSlice[i]);
         rowDiff += Math.abs(slice.data[i+1] - this._prevSlice[i+1]);
         rowDiff += Math.abs(slice.data[i+2] - this._prevSlice[i+2]);
       }
-      motionPerRow[y] = rowDiff / (this._sliceW * 3);
+      motionPerRow[y] = rowDiff / (W * 3);
     }
 
     this._prevSlice.set(slice.data);
 
-    // Overall motion level (for visualization)
     let total = 0;
     for (let i = 0; i < H; i++) total += motionPerRow[i];
     const level = Math.min(1, total / (H * this._threshold * 2));
     this._lastMotion = level;
 
-    // Detect blobs (groups of rows with high motion)
     const blobs = this._detectBlobs(motionPerRow, H);
     this._lastBlobs = blobs;
     this.onLevel?.(level, blobs);
 
-    // Each blob = one athlete crossing — map to lane by vertical position
     blobs.forEach(blob => {
       const laneIdx = this._laneFromY(blob.center);
+      if (this._cooldowns[laneIdx]) return;
 
-      if (!this._cooldowns[laneIdx]) {
-        this._cooldowns[laneIdx] = true;
-        this.onCrossing?.(laneIdx, performance.now());
-        // Cooldown: 1.5s per lane to prevent double-counting
-        setTimeout(() => { this._cooldowns[laneIdx] = false; }, 1500);
+      const ts     = performance.now();
+      const diffMs = ts - this._lastCrossingTs;
+
+      // Fire close-finish callback when two lanes cross within 300ms
+      if (diffMs < 300 && this._lastCrossingLane >= 0 && this._lastCrossingLane !== laneIdx) {
+        this.onCloseFinish?.(this._lastCrossingLane, laneIdx, Math.round(diffMs));
       }
+
+      this._lastCrossingTs   = ts;
+      this._lastCrossingLane = laneIdx;
+
+      this._cooldowns[laneIdx] = true;
+      this.onCrossing?.(laneIdx, ts);
+      setTimeout(() => { this._cooldowns[laneIdx] = false; }, 1500);
     });
   }
 

@@ -298,8 +298,23 @@
     <div class="race-ctrl">
       <button id="btn-race-start" class="btn btn-start">🚀 发令 / 开始</button>
       <div class="ctrl-row">
-        <button id="btn-race-stop"  class="btn btn-stop hidden">⏹ 停止计时</button>
-        <button id="btn-race-reset" class="btn btn-reset">↺ 重置</button>
+        <button id="btn-race-stop"   class="btn btn-stop hidden">⏹ 停止计时</button>
+        <button id="btn-race-abort"  class="btn btn-abort hidden">⚠️ 召回重来</button>
+        <button id="btn-race-reset"  class="btn btn-reset">↺ 重置</button>
+      </div>
+    </div>
+
+    <!-- 接近冲线仲裁弹窗 -->
+    <div class="close-finish-overlay hidden" id="close-finish-overlay">
+      <div class="close-finish-card">
+        <div class="cf-icon">⚡</div>
+        <div class="cf-title">接近冲线！</div>
+        <div class="cf-info" id="cf-info">差距 XXXms，请确认名次</div>
+        <div class="cf-lanes" id="cf-lanes"></div>
+        <div class="cf-actions">
+          <button class="btn btn-start cf-btn" id="cf-confirm">✔ 保持当前顺序</button>
+          <button class="btn btn-secondary cf-btn" id="cf-swap">↔ 交换名次</button>
+        </div>
       </div>
     </div>
 
@@ -429,6 +444,6 @@
 
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=8"></script>
+<script type="module" src="js/app.js?v=9"></script>
 </body>
 </html>
