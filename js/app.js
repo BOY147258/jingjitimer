@@ -1411,7 +1411,8 @@ function resetTimerUI() {
 
 // ── Finish device race flow ────────────────────────────
 function onFinishDeviceRaceStart(event) {
-  state.raceStarted = true;
+  // Always reset regardless of previous state (handles multi-group auto-flow)
+  state.raceStarted  = true;
   state.raceFinished = false;
   state.raceStartServerTime = event._serverTime;
   state.recordingStart = performance.now();
@@ -1419,6 +1420,11 @@ function onFinishDeviceRaceStart(event) {
   state.laneCrossings = {};
   state.laneLastCrossingTime = {};
   state.lanesDone = 0;
+
+  // Hide end overlay immediately if still visible from previous group
+  if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
+  if (DOM.fsResults) DOM.fsResults.innerHTML = '';
+
   beep(660, 200);
 
   // Start recording
@@ -1581,13 +1587,12 @@ async function onFinishDeviceRaceEnd() {
   beep(880, 400);
   showToast('✅ 比赛结束', 'success');
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-}
 
-function showFinishNextGroupBtn() {
-  // The next-group button lives in the fs-end overlay — just wire it up
-  if (DOM.btnFsNextGroup) {
-    DOM.btnFsNextGroup.onclick = resetFinishDevice;
-  }
+  // Auto-dismiss result overlay after 10s — finish device needs no manual button press
+  setTimeout(() => {
+    if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
+    if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '⏳ 等待下一组发令...';
+  }, 10000);
 }
 
 function resetFinishDevice() {

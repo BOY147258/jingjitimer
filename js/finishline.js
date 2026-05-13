@@ -8,7 +8,7 @@ export class FinishLineDetector {
     this._dispCtx           = null;
     this._prevSlice         = null;
     this._linePos           = 0.5;
-    this._threshold         = 20;
+    this._threshold         = 14;   // lower = more sensitive; user can adjust via slider
     this._running           = false;
     this._laneCount         = 4;
     this._laneDividers      = [];
@@ -20,8 +20,8 @@ export class FinishLineDetector {
     this.onCrossing         = null;  // cb(laneIdx, perfTimestamp)
     this.onLevel            = null;  // cb(level 0–1, blobsArray)
     this.onCloseFinish      = null;  // cb(firstLane, secondLane, diffMs) — fired when gap < 300ms
-    // Vertical line scan: analysis canvas is narrow (just the finish strip)
-    this._W = 4;
+    // Analysis canvas: narrow strip centered on finish line (wider = more robust)
+    this._W = 32;
     this._H = 90;
   }
 
@@ -84,12 +84,17 @@ export class FinishLineDetector {
     if (!this._video || this._video.readyState < 2) return;
     const W = this._W, H = this._H;  // W = 4 (vertical line scan)
 
-    // Crop source video to just the finish line strip — avoids processing entire frame
-    const vw   = this._video.videoWidth  || 640;
-    const vh   = this._video.videoHeight || 480;
+    // Use display canvas dimensions as reliable proxy for video frame dimensions
+    const vw   = this._video.videoWidth  || this._dispCanvas?.offsetWidth  || 640;
+    const vh   = this._video.videoHeight || this._dispCanvas?.offsetHeight || 480;
     const srcX = Math.max(0, Math.round(this._linePos * vw) - W / 2);
     const srcW = Math.min(W, vw - srcX);
-    this._ctx.drawImage(this._video, srcX, 0, srcW, vh, 0, 0, W, H);
+    // Source-crop to finish line strip only
+    if (srcW > 0) {
+      this._ctx.drawImage(this._video, srcX, 0, srcW, vh, 0, 0, W, H);
+    } else {
+      this._ctx.drawImage(this._video, 0, 0, W, H);
+    }
 
     const slice = this._ctx.getImageData(0, 0, W, H);
 
