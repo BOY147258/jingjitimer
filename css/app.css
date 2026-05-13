@@ -644,6 +644,49 @@ input[type="text"]:focus { border-color: var(--accent); }
 .lane-time { font-size: 13px; color: var(--text-muted); margin-top: 2px; font-family: monospace; }
 .lane-rank { font-size: 18px; margin-left: auto; }
 
+/* ── Lane DNF ──────────────────────────────────────── */
+.lane-card.dnf { opacity: .55; }
+.lane-card.dnf .lane-num-badge { background: #444; border-color: #444; }
+
+.lane-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.btn-dnf {
+  background: transparent;
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  cursor: pointer;
+  letter-spacing: .5px;
+  transition: background .15s;
+}
+.btn-dnf:hover { background: rgba(231,76,60,.15); }
+
+/* ── Lap-split rows in results ─────────────────────── */
+.rend-splits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 2px;
+  grid-column: 1 / -1;
+}
+.rend-splits span {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+.rend-row { flex-wrap: wrap; }
+
+.res-splits { display: flex; flex-wrap: wrap; gap: 3px 8px; margin-top: 2px; }
+.res-split  { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+
 .btn-finish {
   background: var(--accent);
   color: #fff;

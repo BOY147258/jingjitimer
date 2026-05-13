@@ -168,8 +168,10 @@ function isHTTPS()  { return location.protocol === 'https:' || location.hostname
 
 // ── Init ───────────────────────────────────────────────
 async function init() {
+  loadSettings();
   buildLaneInputs();
   attachEventListeners();
+  applySettingsToDOM();
   loadHistory();
   populateMeetSelects();
   timer.onChange(ms => { DOM.timerDisplay.textContent = PrecisionTimer.format(ms); });
@@ -238,6 +240,46 @@ function updateLapDisplay() {
 function recomputeLaps() {
   state.lapCount = Math.max(1, Math.ceil(state.distance / state.trackLength));
   updateLapDisplay();
+  saveSettings();
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem('race-settings', JSON.stringify({
+      distance:    state.distance,
+      trackLength: state.trackLength,
+      laneCount:   state.laneCount,
+    }));
+  } catch {}
+}
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('race-settings') || '{}');
+    if (s.distance)    state.distance    = Number(s.distance);
+    if (s.trackLength) state.trackLength = Number(s.trackLength);
+    if (s.laneCount)   state.laneCount   = Math.min(12, Math.max(1, Number(s.laneCount)));
+    state.lapCount = Math.max(1, Math.ceil(state.distance / state.trackLength));
+  } catch {}
+}
+
+function applySettingsToDOM() {
+  DOM.laneCountDisp.textContent = state.laneCount;
+  updateLapDisplay();
+  const distSel = $('race-distance');
+  const stdVals = ['60','80','100','200','400','800','1000','1500'];
+  if (distSel) {
+    if (stdVals.includes(String(state.distance))) {
+      distSel.value = String(state.distance);
+    } else {
+      distSel.value = 'custom';
+      $('custom-dist-row')?.classList.remove('hidden');
+      const ci = $('custom-dist-input');
+      if (ci) ci.value = state.distance;
+    }
+  }
+  $('btn-track-200')?.classList.toggle('active', state.trackLength === 200);
+  $('btn-track-400')?.classList.toggle('active', state.trackLength === 400);
 }
 
 // ── Role selection ─────────────────────────────────────
@@ -348,8 +390,13 @@ function registerSyncEvents() {
     if (Array.isArray(e.roster) && e.roster.length) {
       state.laneCount = e.roster.length;
       state.lanes = e.roster.map(r => ({
-        id: r.id, name: r.name, time: null, rank: null, lapTimes: [], currentLap: 0,
+        id: r.id, name: r.name, time: null, rank: null, dnf: false, lapTimes: [], currentLap: 0,
       }));
+    }
+    // Show confirmed config in status label
+    if (DOM.fsStateLabel && !state.raceStarted) {
+      const lapStr = state.lapCount > 1 ? ` · ${state.lapCount}圈` : '';
+      DOM.fsStateLabel.textContent = `✅ 已就绪 · ${state.distance}m${lapStr} · ${state.laneCount}人`;
     }
   });
   sync.on('RACE_START', e => {
@@ -359,6 +406,15 @@ function registerSyncEvents() {
   });
   sync.on('CROSSING_SPLIT', e => {
     if (state.role === 'start') onStartDeviceReceiveSplit(e);
+  });
+  sync.on('LANE_DNF', e => {
+    if (state.role !== 'finish') return;
+    const laneIdx = e.laneIdx;
+    // Mark lane as fully done so finish device doesn't wait for it
+    state.laneCrossings[laneIdx] = state.lapCount;
+    state.lanesDone++;
+    showToast(`${e.athleteName || `道次${laneIdx+1}`} 已弃赛`, 'warn');
+    if (state.lanesDone >= state.laneCount) setTimeout(onFinishDeviceRaceEnd, 800);
   });
   sync.on('CROSSING', e => {
     if (state.role === 'start') onStartDeviceReceiveCrossing(e);
@@ -572,7 +628,7 @@ function buildLanes() {
     return {
       id: i,
       name: input ? input.value.trim() || `运动员 ${i+1}` : `运动员 ${i+1}`,
-      time: null, rank: null,
+      time: null, rank: null, dnf: false,
       lapTimes: [],   // ms for each completed lap
       currentLap: 0,
     };
@@ -596,10 +652,15 @@ function renderLaneCards() {
         <div class="lane-laps" id="lane-laps-${lane.id}"></div>
       </div>
       <span class="lane-rank" id="lane-rank-${lane.id}"></span>
-      <button class="btn-finish" id="btn-finish-${lane.id}" disabled>${multiLap ? '计圈' : '到达终点'}</button>`;
+      <div class="lane-btns">
+        <button class="btn-finish" id="btn-finish-${lane.id}" disabled>${multiLap ? '过线' : '到达终点'}</button>
+        <button class="btn-dnf hidden" id="btn-dnf-${lane.id}">DNF</button>
+      </div>`;
     DOM.lanesWrap.appendChild(card);
     card.querySelector(`#btn-finish-${lane.id}`)
         .addEventListener('click', () => finishLane(lane.id));
+    card.querySelector(`#btn-dnf-${lane.id}`)
+        .addEventListener('click', () => markDNF(lane.id));
   });
 }
 
@@ -653,7 +714,32 @@ function finishLane(id) {
   }
 
   showToast(`${lane.name}  ${PrecisionTimer.formatFull(lane.time)}`, 'success');
-  if (state.lanes.every(l => l.time !== null)) setTimeout(endRace, 600);
+  if (state.lanes.every(l => l.time !== null || l.dnf)) setTimeout(endRace, 600);
+}
+
+function markDNF(id) {
+  if (!state.raceStarted || state.raceFinished) return;
+  const lane = state.lanes[id];
+  if (!lane || lane.time !== null || lane.dnf) return;
+  if (!confirm(`确认 ${lane.name} 弃赛（DNF）？\n当前已完成 ${lane.currentLap}/${state.lapCount} 圈`)) return;
+
+  lane.dnf = true;
+
+  const card    = $(`lane-card-${id}`);
+  const timeEl  = $(`lane-time-${id}`);
+  const lapEl   = $(`lane-lap-${id}`);
+  const btn     = $(`btn-finish-${id}`);
+  const dnfBtn  = $(`btn-dnf-${id}`);
+  if (card)   { card.classList.add('dnf'); }
+  if (timeEl) { timeEl.textContent = 'DNF'; timeEl.style.color = 'var(--text-muted)'; }
+  if (lapEl)  lapEl.textContent = '已弃赛';
+  if (btn)    { btn.disabled = true; btn.textContent = 'DNF'; }
+  if (dnfBtn) dnfBtn.classList.add('hidden');
+
+  if (state.role === 'start') sync.send('LANE_DNF', { laneIdx: id, athleteName: lane.name });
+
+  showToast(`${lane.name} 已标记弃赛`, 'warn');
+  if (state.lanes.every(l => l.time !== null || l.dnf)) setTimeout(endRace, 600);
 }
 
 // When start device receives a crossing from finish device
@@ -683,7 +769,7 @@ function onStartDeviceReceiveCrossing(event) {
   DOM.timerSub.textContent = `${lane.name} 冲线：${PrecisionTimer.formatFull(lane.time)}`;
   showToast(`🏁 ${lane.name} 冲线！${PrecisionTimer.formatFull(lane.time)}`, 'success');
 
-  if (state.lanes.every(l => l.time !== null)) setTimeout(endRace, 800);
+  if (state.lanes.every(l => l.time !== null || l.dnf)) setTimeout(endRace, 800);
 }
 
 function onStartDeviceReceiveSplit(event) {
@@ -740,8 +826,10 @@ function beginRace() {
     DOM.recBadge.classList.remove('hidden');
   }
   state.lanes.forEach(l => {
-    const btn = $(`btn-finish-${l.id}`);
-    if (btn) btn.disabled = false;
+    const btn    = $(`btn-finish-${l.id}`);
+    const dnfBtn = $(`btn-dnf-${l.id}`);
+    if (btn)    btn.disabled = false;
+    if (dnfBtn) dnfBtn.classList.remove('hidden');
   });
 
   // Broadcast race config + start signal to finish device
@@ -766,8 +854,10 @@ async function endRace() {
   DOM.btnStop.classList.add('hidden');
   DOM.recBadge.classList.add('hidden');
   state.lanes.forEach(l => {
-    const btn = $(`btn-finish-${l.id}`);
-    if (btn && !btn.disabled) { btn.disabled = true; btn.textContent = '未完成'; }
+    const btn    = $(`btn-finish-${l.id}`);
+    const dnfBtn = $(`btn-dnf-${l.id}`);
+    if (btn    && !btn.disabled)    { btn.disabled = true; btn.textContent = '未完成'; }
+    if (dnfBtn) dnfBtn.classList.add('hidden');
   });
 
   let blob = null;
@@ -791,15 +881,20 @@ function showRaceEndActions(race, blob) {
   const medals = ['🥇','🥈','🥉'];
 
   // Podium rows with rank highlight
+  const fmtSplits = lapTimes => lapTimes?.length > 1
+    ? `<div class="rend-splits">${lapTimes.map((t,i) => `<span>第${i+1}圈&nbsp;${PrecisionTimer.formatFull(t)}</span>`).join('')}</div>`
+    : '';
+
   const rows = sorted.map((l, i) => `
     <div class="rend-row ${i === 0 ? 'rend-gold' : ''}">
       <span class="rend-medal">${medals[i] || `<span style="width:28px;text-align:center;display:inline-block">#${i+1}</span>`}</span>
       <span class="rend-name">${l.name}</span>
       <span class="rend-time">${PrecisionTimer.formatFull(l.time)}</span>
+      ${fmtSplits(l.lapTimes)}
     </div>`).join('');
 
   const dnfRows = race.lanes.filter(l => l.time == null).map(l =>
-    `<div class="rend-row rend-dnf"><span class="rend-medal">—</span><span class="rend-name">${l.name}</span><span class="rend-time" style="color:var(--text-muted)">DNS</span></div>`
+    `<div class="rend-row rend-dnf"><span class="rend-medal">—</span><span class="rend-name">${l.name}</span><span class="rend-time" style="color:var(--text-muted)">${l.dnf ? 'DNF' : 'DNS'}</span></div>`
   ).join('');
 
   const card = document.createElement('div');
@@ -842,7 +937,7 @@ function nextGroup(newRound = false) {
   // Reset race state
   state.raceStarted  = false;
   state.raceFinished = false;
-  state.lanes.forEach(l => { l.time = null; l.rank = null; l.lapTimes = []; l.currentLap = 0; });
+  state.lanes.forEach(l => { l.time = null; l.rank = null; l.dnf = false; l.lapTimes = []; l.currentLap = 0; });
 
   // Reset timer UI
   timer.reset();
@@ -910,7 +1005,7 @@ async function autoSaveToBackend(race) {
 
 function resetRace() {
   state.raceStarted = false; state.raceFinished = false;
-  state.lanes.forEach(l => { l.time = null; l.rank = null; });
+  state.lanes.forEach(l => { l.time = null; l.rank = null; l.dnf = false; l.lapTimes = []; l.currentLap = 0; });
   timer.reset();
   resetTimerUI();
   DOM.recBadge.classList.add('hidden');
@@ -1172,12 +1267,15 @@ function renderResults(race, blob) {
   DOM.resultsMeta.textContent  = `${race.date} · ${race.lanes.length} 名运动员`;
   const sorted = race.lanes.filter(l=>l.time!=null).sort((a,b)=>a.time-b.time);
   const dnf    = race.lanes.filter(l=>l.time==null);
+  const splitsCells = l => l.lapTimes?.length > 1
+    ? l.lapTimes.map((t,i) => `<span class="res-split">第${i+1}圈&nbsp;${PrecisionTimer.formatFull(t)}</span>`).join('')
+    : '';
   DOM.resultsTableW.innerHTML = `<table class="result-table">
     <thead><tr><th class="rank-col">名次</th><th>姓名</th><th>成绩</th></tr></thead>
     <tbody>${[...sorted,...dnf].map((l,i)=>`<tr class="${i===0?'gold-row':''}">
       <td class="rank-col">${['🥇','🥈','🥉'][i]||i+1}</td>
-      <td>${l.name}</td>
-      <td class="time-col">${l.time!=null?PrecisionTimer.formatFull(l.time):'DNS'}</td>
+      <td>${l.name}${splitsCells(l)?`<div class="res-splits">${splitsCells(l)}</div>`:''}</td>
+      <td class="time-col">${l.time!=null?PrecisionTimer.formatFull(l.time):(l.dnf?'DNF':'DNS')}</td>
     </tr>`).join('')}</tbody></table>`;
   if (blob) {
     const url = recorder.getObjectURL();
@@ -1193,17 +1291,25 @@ function exportCSV(crossings, raceName) {
   const data    = crossings || [];
   const name    = raceName  || (history[0]?.name) || '田径比赛';
   const date    = new Date().toLocaleString('zh-CN');
-  const lines   = [`比赛名称,${name}`, `日期,${date}`, '', '名次,姓名,成绩(ms),成绩'];
+  const race    = history[0];
+  const maxLaps = race ? Math.max(0, ...race.lanes.map(l => l.lapTimes?.length || 0)) : 0;
+  const lapCols = maxLaps > 1 ? Array.from({length: maxLaps}, (_,i) => `第${i+1}圈`) : [];
+  const header  = ['名次','姓名','成绩(ms)','成绩', ...lapCols].join(',');
+  const lines   = [`比赛名称,${name}`, `日期,${date}`, '', header];
 
   if (crossings) {
     crossings.forEach((c, i) => {
       lines.push(`${i+1},${c.name},${Math.round(c.raceTime)},${PrecisionTimer.formatFull(c.raceTime)}`);
     });
-  } else if (history[0]) {
-    history[0].lanes.filter(l=>l.time!=null).sort((a,b)=>a.time-b.time)
-      .forEach((l,i) => lines.push(`${i+1},${l.name},${Math.round(l.time)},${PrecisionTimer.formatFull(l.time)}`));
-    history[0].lanes.filter(l=>l.time==null)
-      .forEach(l => lines.push(`DNS,${l.name},DNS,DNS`));
+  } else if (race) {
+    race.lanes.filter(l=>l.time!=null).sort((a,b)=>a.time-b.time).forEach((l,i) => {
+      const splits = lapCols.length ? (l.lapTimes||[]).map(t=>PrecisionTimer.formatFull(t)).join(',') : '';
+      lines.push([i+1, l.name, Math.round(l.time), PrecisionTimer.formatFull(l.time), splits].filter((_,j)=>j<4||lapCols.length).join(','));
+    });
+    race.lanes.filter(l=>l.time==null).forEach(l => {
+      const label = l.dnf ? 'DNF' : 'DNS';
+      lines.push([label, l.name, label, label].join(','));
+    });
   }
 
   const url = URL.createObjectURL(new Blob(['﻿'+lines.join('\n')], { type: 'text/csv;charset=utf-8;' }));
@@ -1315,10 +1421,10 @@ function attachEventListeners() {
 
   // Lane count
   $('btn-lane-minus').addEventListener('click', () => {
-    if (state.laneCount > 1) { state.laneCount--; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); }
+    if (state.laneCount > 1) { state.laneCount--; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); }
   });
   $('btn-lane-plus').addEventListener('click', () => {
-    if (state.laneCount < 12) { state.laneCount++; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); }
+    if (state.laneCount < 12) { state.laneCount++; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); }
   });
 
   // Lap count
