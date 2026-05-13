@@ -131,6 +131,7 @@ const DOM = {
   btnFlipCam:     $('btn-flip-cam'),
   // Race (start device)
   raceVideo:      $('race-video'),
+  raceCanvas:     $('race-canvas'),
   recBadge:       $('rec-badge'),
   camOffMsg:      $('cam-off-msg'),
   timerDisplay:   $('timer-display'),
@@ -796,6 +797,33 @@ async function requestPermissions() {
       DOM.btnFlipCam.classList.remove('hidden');
       DOM.raceVideo.srcObject = mainStream;
       DOM.camOffMsg.style.display = 'none';
+
+      // Init finish line detector on the race video (solo & start modes)
+      // Crossing callback is null until race begins — preview/calibration only
+      if (DOM.raceCanvas) {
+        DOM.raceVideo.addEventListener('loadedmetadata', () => {
+          const resizeRaceCanvas = () => {
+            DOM.raceCanvas.width  = DOM.raceVideo.offsetWidth  * devicePixelRatio;
+            DOM.raceCanvas.height = DOM.raceVideo.offsetHeight * devicePixelRatio;
+            DOM.raceCanvas.style.width  = '100%';
+            DOM.raceCanvas.style.height = '100%';
+          };
+          resizeRaceCanvas();
+          window.addEventListener('resize', resizeRaceCanvas);
+          detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+          detector.bindDrag(DOM.raceCanvas);
+          detector.start(null, (level, blobs) => {
+            // Show motion level in race cam during preview (before race starts)
+            if (!state.raceStarted) {
+              const pct = Math.min(100, level * 100);
+              if (DOM.timerSub && !state.raceStarted)
+                DOM.timerSub.textContent = level > 0.25
+                  ? `🔴 终点线检测到动作 (${Math.round(pct)}%)`
+                  : `🟢 终点线监听中`;
+            }
+          });
+        }, { once: true });
+      }
     }
   } else {
     if (state.role !== 'finish') {
@@ -1049,6 +1077,18 @@ function abortRace() {
     if (dnfBtn) dnfBtn.classList.add('hidden');
   });
 
+  // Solo mode: stop detector, restart preview
+  if (state.role === 'solo' && DOM.raceCanvas) {
+    detector.stop();
+    detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+    detector.start(null, (level) => {
+      const pct = Math.min(100, level * 100);
+      DOM.timerSub.textContent = level > 0.25
+        ? `🔴 终点线检测到动作 (${Math.round(pct)}%)`
+        : `🟢 终点线监听中`;
+    });
+  }
+
   if (state.role === 'start') sync.send('RACE_ABORT', {});
   showToast('⚠️ 比赛已召回，重新发令即可', 'warn');
 }
@@ -1218,6 +1258,23 @@ function beginRace() {
     if (dnfBtn) dnfBtn.classList.remove('hidden');
   });
 
+  // Solo mode: activate camera crossing detection
+  if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
+    detector.stop();
+    detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+    detector.start(
+      (laneIdx, perfTs) => {
+        if (laneIdx < state.laneCount) finishLane(laneIdx);
+      },
+      (level) => {
+        const pct = Math.min(100, level * 100);
+        DOM.timerSub.textContent = level > 0.3
+          ? `🔴 冲线检测 (${Math.round(pct)}%)`
+          : `🟢 终点监听中`;
+      }
+    );
+  }
+
   // Broadcast race config + start signal to finish device
   if (state.role === 'start') {
     sync.send('RACE_CONFIG', {
@@ -1251,6 +1308,12 @@ async function endRace() {
   if (recorder.recording) blob = await recorder.stop();
 
   if (state.role === 'start') sync.send('RACE_END', {});
+
+  // Solo mode: stop detector (return to preview after results are shown)
+  if (state.role === 'solo') {
+    detector.stop();
+    detector.start(null, null);  // keep overlay drawn but no callbacks
+  }
 
   const race = saveRace(blob);
   autoSaveToBackend(race);
@@ -2124,11 +2187,29 @@ function attachEventListeners() {
 
   // Lane count
   $('btn-lane-minus').addEventListener('click', () => {
-    if (state.laneCount > 1) { state.laneCount--; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); broadcastConfig(); }
+    if (state.laneCount > 1) {
+      state.laneCount--;
+      DOM.laneCountDisp.textContent = state.laneCount;
+      buildLaneInputs(); saveSettings(); broadcastConfig();
+      if (state.role === 'solo' && DOM.raceCanvas && !state.raceStarted) {
+        detector.stop();
+        detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+        detector.start(null, null);
+      }
+    }
   });
   $('btn-lane-plus').addEventListener('click', () => {
     if (state.laneCount >= maxLanes()) { showUpgradeDialog(); return; }
-    if (state.laneCount < 12) { state.laneCount++; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); broadcastConfig(); }
+    if (state.laneCount < 12) {
+      state.laneCount++;
+      DOM.laneCountDisp.textContent = state.laneCount;
+      buildLaneInputs(); saveSettings(); broadcastConfig();
+      if (state.role === 'solo' && DOM.raceCanvas && !state.raceStarted) {
+        detector.stop();
+        detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+        detector.start(null, null);
+      }
+    }
   });
 
   // Lap count
