@@ -1053,6 +1053,38 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 .form-row select:focus { border-color: var(--accent); }
 
+/* ── Track-length toggle ───────────────────────────── */
+.track-len-toggle {
+  display: flex;
+  gap: 6px;
+}
+.track-len-btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.track-len-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Finish split card ─────────────────────────────── */
+.fs-split-card {
+  opacity: .85;
+  border-left: 3px solid #ffd600;
+}
+.fs-split-card .fsr-rank {
+  font-size: 13px;
+  color: #ffd600;
+}
+
 /* ── Race-end / Podium card ────────────────────────── */
 .race-end-card {
   margin: 12px 0 0;

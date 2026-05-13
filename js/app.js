@@ -10,6 +10,8 @@ const state = {
   role:         'solo',   // 'solo' | 'start' | 'finish'
   laneCount:    4,
   lapCount:     1,        // laps per race (1 = sprint, 4 = 1600m, etc.)
+  distance:     100,      // race distance in metres
+  trackLength:  400,      // track length in metres
   currentRound: 1,
   currentGroup: 1,
   meetId:       null,
@@ -27,10 +29,13 @@ const state = {
   clientId:     null,
   peerConnected:false,
   raceStartServerTime: null,
-  // finish device
+  // finish device — per-lane multi-lap tracking
   recordingStart: null,
   crossings:    [],
   finishRecorderBlob: null,
+  laneCrossings:       {},   // laneIdx → number of crossings so far
+  laneLastCrossingTime:{},   // laneIdx → raceTime (ms) at last crossing
+  lanesDone:           0,    // lanes that have completed all laps
 };
 
 const timer    = new PrecisionTimer();
@@ -230,6 +235,11 @@ function updateLapDisplay() {
   if (el) el.textContent = state.lapCount;
 }
 
+function recomputeLaps() {
+  state.lapCount = Math.max(1, Math.ceil(state.distance / state.trackLength));
+  updateLapDisplay();
+}
+
 // ── Role selection ─────────────────────────────────────
 function selectRole(role) {
   selectedRole = role;
@@ -330,10 +340,25 @@ function registerSyncEvents() {
     updateConnStatus(sync.peerOnline);
     updateFinishBadge();
   });
+  sync.on('RACE_CONFIG', e => {
+    if (state.role !== 'finish') return;
+    if (e.lapsNeeded)   state.lapCount    = e.lapsNeeded;
+    if (e.distance)     state.distance    = e.distance;
+    if (e.trackLength)  state.trackLength = e.trackLength;
+    if (Array.isArray(e.roster) && e.roster.length) {
+      state.laneCount = e.roster.length;
+      state.lanes = e.roster.map(r => ({
+        id: r.id, name: r.name, time: null, rank: null, lapTimes: [], currentLap: 0,
+      }));
+    }
+  });
   sync.on('RACE_START', e => {
     state.raceStartServerTime = e._serverTime;
     if (state.role === 'finish') onFinishDeviceRaceStart(e);
     if (state.role === 'start')  { /* start device sent this, timer already running */ }
+  });
+  sync.on('CROSSING_SPLIT', e => {
+    if (state.role === 'start') onStartDeviceReceiveSplit(e);
   });
   sync.on('CROSSING', e => {
     if (state.role === 'start') onStartDeviceReceiveCrossing(e);
@@ -652,11 +677,36 @@ function onStartDeviceReceiveCrossing(event) {
   if (timeEl) { timeEl.textContent = PrecisionTimer.formatFull(lane.time); timeEl.style.color = '#00e676'; }
   if (rankEl) rankEl.textContent = ['🥇','🥈','🥉'][lane.rank-1] || `#${lane.rank}`;
   if (btn)    { btn.disabled = true; btn.textContent = '✓ 终点确认'; }
+  const lapInfoEl2 = $(`lane-lap-${laneIdx}`);
+  if (lapInfoEl2) lapInfoEl2.textContent = `完成 ${state.lapCount}/${state.lapCount}圈`;
 
   DOM.timerSub.textContent = `${lane.name} 冲线：${PrecisionTimer.formatFull(lane.time)}`;
   showToast(`🏁 ${lane.name} 冲线！${PrecisionTimer.formatFull(lane.time)}`, 'success');
 
   if (state.lanes.every(l => l.time !== null)) setTimeout(endRace, 800);
+}
+
+function onStartDeviceReceiveSplit(event) {
+  const laneIdx = event.laneIdx;
+  const lane    = state.lanes[laneIdx];
+  if (!lane || lane.time !== null) return;
+
+  lane.currentLap = event.lapNum;
+
+  const lapInfoEl = $(`lane-lap-${laneIdx}`);
+  const lapsEl    = $(`lane-laps-${laneIdx}`);
+  const timeEl    = $(`lane-time-${laneIdx}`);
+
+  if (lapInfoEl) lapInfoEl.textContent = `圈 ${event.lapNum}/${state.lapCount}`;
+  if (timeEl)   timeEl.textContent = PrecisionTimer.formatFull(event.raceTime);
+  if (lapsEl) {
+    const sp = document.createElement('span');
+    sp.className = 'lap-split';
+    sp.textContent = `第${event.lapNum}圈 ${PrecisionTimer.formatFull(event.raceTime)}`;
+    lapsEl.appendChild(sp);
+  }
+
+  showToast(`${lane.name} 第${event.lapNum}圈 ${PrecisionTimer.formatFull(event.raceTime)}`, 'info');
 }
 
 async function enterRace() {
@@ -694,8 +744,14 @@ function beginRace() {
     if (btn) btn.disabled = false;
   });
 
-  // Broadcast to finish device
+  // Broadcast race config + start signal to finish device
   if (state.role === 'start') {
+    sync.send('RACE_CONFIG', {
+      lapsNeeded:  state.lapCount,
+      distance:    state.distance,
+      trackLength: state.trackLength,
+      roster:      state.lanes.map(l => ({ id: l.id, name: l.name })),
+    });
     sync.send('RACE_START', { serverTime: state.raceStartServerTime });
   }
 }
@@ -876,6 +932,9 @@ function onFinishDeviceRaceStart(event) {
   state.raceStartServerTime = event._serverTime;
   state.recordingStart = performance.now();
   state.crossings = [];
+  state.laneCrossings = {};
+  state.laneLastCrossingTime = {};
+  state.lanesDone = 0;
   beep(660, 200);
 
   // Start recording
@@ -912,29 +971,52 @@ function onFinishDeviceRaceStart(event) {
 function handleFinishCrossing(laneIdx, perfTs) {
   if (!state.raceStarted || state.raceFinished) return;
 
-  // ── Hard cap: never exceed the configured athlete count ──
-  if (state.crossings.length >= state.laneCount) return;
+  // Clamp laneIdx to valid range
+  if (laneIdx < 0 || laneIdx >= state.laneCount) laneIdx = Math.min(laneIdx, state.laneCount - 1);
 
-  // Prevent same lane from crossing twice
-  if (state.crossings.some(c => c.laneIdx === laneIdx)) return;
+  // Init per-lane tracking
+  if (state.laneCrossings[laneIdx] === undefined) state.laneCrossings[laneIdx] = 0;
+
+  // Lane has already finished all laps
+  if (state.laneCrossings[laneIdx] >= state.lapCount) return;
 
   const raceTime    = sync.serverNow() - state.raceStartServerTime;
   const videoOffset = state.recordingStart != null
     ? (perfTs - state.recordingStart) / 1000 : 0;
-  const rank        = state.crossings.length + 1;
-  const laneName    = state.lanes[laneIdx]?.name || `运动员 ${rank}`;
+
+  const prevTime = state.laneLastCrossingTime[laneIdx] ?? 0;
+  const lapTime  = raceTime - prevTime;
+  state.laneLastCrossingTime[laneIdx] = raceTime;
+  state.laneCrossings[laneIdx]++;
+  const crossingNum = state.laneCrossings[laneIdx];
+
+  const laneName = state.lanes[laneIdx]?.name || `运动员 ${laneIdx + 1}`;
+
+  if (crossingNum < state.lapCount) {
+    // Intermediate lap — show split
+    beep(440, 80);
+    if (navigator.vibrate) navigator.vibrate(60);
+    renderSplitCard(laneIdx, crossingNum, raceTime, lapTime, laneName);
+    sync.send('CROSSING_SPLIT', { laneIdx, raceTime, lapTime, lapNum: crossingNum, athleteName: laneName });
+    showToast(`${laneName} 第${crossingNum}圈 ${PrecisionTimer.formatFull(raceTime)}`, 'info');
+    return;
+  }
+
+  // Final crossing — record finish
+  state.lanesDone++;
+  const rank = state.lanesDone;
 
   const crossing = { laneIdx, raceTime, videoOffset, rank, name: laneName, perfTs };
   state.crossings.push(crossing);
 
   renderCrossingCard(crossing);
   beep(rank === 1 ? 880 : 660, 120);
-  if (navigator.vibrate) navigator.vibrate(rank === 1 ? [80,40,80] : 120);
+  if (navigator.vibrate) navigator.vibrate(rank === 1 ? [80, 40, 80] : 120);
 
-  sync.send('CROSSING', { laneIdx, raceTime, rank, athleteName: laneName });
+  sync.send('CROSSING', { laneIdx, raceTime, rank, athleteName: laneName, lapTime });
   showToast(`🏁 #${rank} ${laneName}  ${PrecisionTimer.formatFull(raceTime)}`, 'success');
 
-  if (state.crossings.length >= state.laneCount) {
+  if (state.lanesDone >= state.laneCount) {
     setTimeout(onFinishDeviceRaceEnd, 1000);
   }
 }
@@ -950,6 +1032,22 @@ function renderCrossingCard(crossing) {
       <div class="fsr-time">${PrecisionTimer.formatFull(crossing.raceTime)}</div>
     </div>`;
   if (DOM.fsResults) DOM.fsResults.appendChild(card);
+  requestAnimationFrame(() => card.classList.add('visible'));
+}
+
+function renderSplitCard(laneIdx, lapNum, raceTime, lapTime, laneName) {
+  if (!DOM.fsResults) return;
+  const card = document.createElement('div');
+  card.className = 'fs-result-card fs-split-card';
+  card.innerHTML = `
+    <div class="fsr-rank" style="font-size:13px;color:#ffd600">第${lapNum}圈</div>
+    <div class="fsr-info">
+      <div class="fsr-name">${laneName}</div>
+      <div class="fsr-time" style="font-size:14px">${PrecisionTimer.formatFull(raceTime)}
+        <span style="color:#888;font-size:11px;margin-left:4px">+${PrecisionTimer.formatFull(lapTime)}</span>
+      </div>
+    </div>`;
+  DOM.fsResults.appendChild(card);
   requestAnimationFrame(() => card.classList.add('visible'));
 }
 
@@ -996,6 +1094,9 @@ function resetFinishDevice() {
   state.raceStarted  = false;
   state.raceFinished = false;
   state.crossings    = [];
+  state.laneCrossings = {};
+  state.laneLastCrossingTime = {};
+  state.lanesDone = 0;
   state.recordingStart = null;
   if (mainStream && state.camGranted) recorder.initFromStream(mainStream);
 
@@ -1282,10 +1383,45 @@ function attachEventListeners() {
     resetRace();
   });
 
-  // Manual crossing (backup)
+  // Manual crossing (backup) — pick the unfinished lane with fewest crossings
   DOM.btnFsManual?.addEventListener('click', () => {
-    const nextIdx = state.crossings.length;
-    handleFinishCrossing(nextIdx, performance.now());
+    let targetLane = 0;
+    let minCross   = Infinity;
+    for (let i = 0; i < state.laneCount; i++) {
+      const c = state.laneCrossings[i] ?? 0;
+      if (c < state.lapCount && c < minCross) { minCross = c; targetLane = i; }
+    }
+    handleFinishCrossing(targetLane, performance.now());
+  });
+
+  // Distance selector
+  $('race-distance')?.addEventListener('change', function() {
+    const customRow = $('custom-dist-row');
+    if (this.value === 'custom') {
+      customRow?.classList.remove('hidden');
+    } else {
+      customRow?.classList.add('hidden');
+      state.distance = Number(this.value);
+      recomputeLaps();
+    }
+  });
+  $('custom-dist-input')?.addEventListener('input', function() {
+    const v = parseFloat(this.value);
+    if (v > 0) { state.distance = v; recomputeLaps(); }
+  });
+
+  // Track length toggle
+  $('btn-track-200')?.addEventListener('click', () => {
+    state.trackLength = 200;
+    $('btn-track-200').classList.add('active');
+    $('btn-track-400').classList.remove('active');
+    recomputeLaps();
+  });
+  $('btn-track-400')?.addEventListener('click', () => {
+    state.trackLength = 400;
+    $('btn-track-400').classList.add('active');
+    $('btn-track-200').classList.remove('active');
+    recomputeLaps();
   });
 
   // Results actions
