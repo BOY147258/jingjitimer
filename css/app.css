@@ -1402,3 +1402,86 @@ input[type="text"]:focus { border-color: var(--accent); }
   text-align: center;
   color: var(--text-muted);
 }
+
+/* ── 升级弹窗 ──────────────────────────────────────── */
+.upgrade-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(0,0,0,.82);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  animation: fadeIn .2s ease;
+}
+.upgrade-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 24px 20px 20px;
+  width: 100%; max-width: 420px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+.upg-logo {
+  font-size: 28px; font-weight: 900; color: var(--accent);
+  letter-spacing: 3px; text-align: center; margin-bottom: 4px;
+}
+.upg-title {
+  text-align: center; font-size: 16px; font-weight: 700;
+  margin-bottom: 12px;
+}
+.upg-trial {
+  text-align: center; font-size: 13px; color: var(--green);
+  background: var(--green-dim); border-radius: 8px;
+  padding: 6px 12px; margin-bottom: 14px;
+}
+.upg-trial.expired { color: var(--red); background: var(--red-dim); }
+
+.upg-plans {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px; margin-bottom: 16px;
+}
+.upg-plan {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 10px; position: relative;
+}
+.upg-plan.featured {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.upg-badge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+}
+.upg-plan-name { font-size: 13px; font-weight: 700; text-align: center; margin-bottom: 4px; }
+.upg-plan-price {
+  font-size: 20px; font-weight: 900; text-align: center;
+  color: var(--accent); margin-bottom: 8px;
+}
+.upg-plan-price span { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.upg-features { list-style: none; font-size: 11px; line-height: 1.9; }
+.upg-features li.no { color: var(--text-muted); }
+
+.upg-contact {
+  text-align: center; font-size: 13px; color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.upg-code-row {
+  display: flex; gap: 8px; margin-bottom: 10px;
+}
+.upg-code-row input {
+  flex: 1; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 14px; padding: 8px 12px;
+  outline: none;
+}
+.upg-code-row input:focus { border-color: var(--accent); }
+.upg-code-row button {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 8px; font-size: 14px; font-weight: 700;
+  padding: 8px 16px; cursor: pointer;
+}
+.upg-close {
+  width: 100%; background: transparent; border: 1px solid var(--border);
+  color: var(--text-muted); border-radius: 8px; padding: 9px;
+  font-size: 14px; cursor: pointer;
+}
+.upg-close:hover { background: var(--bg-elevated); }

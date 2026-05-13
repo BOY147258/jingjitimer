@@ -134,8 +134,12 @@
     <div class="card">
       <div class="card-title">📋 比赛信息</div>
       <div class="form-row">
+        <label>学校/组织</label>
+        <input type="text" id="org-name" placeholder="如：XX中学体育部">
+      </div>
+      <div class="form-row">
         <label>比赛名称</label>
-        <input type="text" id="race-name" value="田径比赛" placeholder="如：100米决赛">
+        <input type="text" id="race-name" value="田径比赛" placeholder="如：100米预赛">
       </div>
       <div class="form-row">
         <label>运动员数量</label>
@@ -309,7 +313,7 @@
     </div>
 
     <div class="card-actions">
-      <button id="btn-export-csv" class="btn btn-secondary">📋 导出成绩</button>
+      <button id="btn-export-csv" class="btn btn-secondary">📊 导出 Excel 成绩单</button>
       <button id="btn-clear-results" class="btn btn-danger">🗑️ 清除</button>
     </div>
 
@@ -383,6 +387,6 @@
 
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=5"></script>
+<script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>
