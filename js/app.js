@@ -198,7 +198,6 @@ async function init() {
   attachEventListeners();
   applySettingsToDOM();
   loadHistory();
-  populateMeetSelects();
   timer.onChange(ms => { DOM.timerDisplay.textContent = PrecisionTimer.format(ms); });
   await sleep(400);
   DOM.loading.classList.add('hidden');
@@ -220,50 +219,6 @@ async function init() {
   DOM.roleOverlay.classList.remove('hidden');
 }
 
-// ── Backend: populate meet/event selectors ─────────────
-async function populateMeetSelects() {
-  try {
-    const meets = await ApiClient.getMeets();
-    if (!meets?.length) return;
-    const meetSel  = $('setup-meet-select');
-    const eventSel = $('setup-event-select');
-    if (!meetSel || !eventSel) return;
-    meetSel.innerHTML = '<option value="">— 关联赛事（可选）—</option>' +
-      meets.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-    meetSel.onchange = async () => {
-      const mid = meetSel.value;
-      state.meetId  = mid ? Number(mid) : null;
-      state.eventId = null;
-      if (mid) {
-        const evs = await ApiClient.getEvents(mid);
-        eventSel.innerHTML = '<option value="">— 关联项目（可选）—</option>' +
-          (evs || []).map(e => `<option value="${e.id}" data-laps="${e.laps}" data-rounds="${e.totalRounds}" data-groups="${e.groupsPerRound}">${e.name}</option>`).join('');
-        eventSel.parentElement?.classList.remove('hidden');
-      } else {
-        eventSel.innerHTML = '<option value="">— 关联项目（可选）—</option>';
-        eventSel.parentElement?.classList.add('hidden');
-      }
-    };
-    eventSel.onchange = () => {
-      const opt = eventSel.selectedOptions[0];
-      if (opt?.value) {
-        state.eventId = Number(opt.value);
-        // Auto-fill laps/rounds/groups from event
-        const laps   = Number(opt.dataset.laps)   || 1;
-        const rounds = Number(opt.dataset.rounds)  || 1;
-        const groups = Number(opt.dataset.groups)  || 1;
-        state.lapCount = laps;
-        updateLapDisplay();
-        const roundDisp = $('round-display');
-        const groupDisp = $('group-display');
-        if (roundDisp) roundDisp.textContent = state.currentRound;
-        if (groupDisp) groupDisp.textContent = state.currentGroup;
-      } else {
-        state.eventId = null;
-      }
-    };
-  } catch {}
-}
 
 function updateLapDisplay() {
   const el = $('lap-count-display');
@@ -798,32 +753,7 @@ async function requestPermissions() {
       DOM.raceVideo.srcObject = mainStream;
       DOM.camOffMsg.style.display = 'none';
 
-      // Init finish line detector on the race video (solo & start modes)
-      // Crossing callback is null until race begins — preview/calibration only
-      if (DOM.raceCanvas) {
-        DOM.raceVideo.addEventListener('loadedmetadata', () => {
-          const resizeRaceCanvas = () => {
-            DOM.raceCanvas.width  = DOM.raceVideo.offsetWidth  * devicePixelRatio;
-            DOM.raceCanvas.height = DOM.raceVideo.offsetHeight * devicePixelRatio;
-            DOM.raceCanvas.style.width  = '100%';
-            DOM.raceCanvas.style.height = '100%';
-          };
-          resizeRaceCanvas();
-          window.addEventListener('resize', resizeRaceCanvas);
-          detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
-          detector.bindDrag(DOM.raceCanvas);
-          detector.start(null, (level, blobs) => {
-            // Show motion level in race cam during preview (before race starts)
-            if (!state.raceStarted) {
-              const pct = Math.min(100, level * 100);
-              if (DOM.timerSub && !state.raceStarted)
-                DOM.timerSub.textContent = level > 0.25
-                  ? `🔴 终点线检测到动作 (${Math.round(pct)}%)`
-                  : `🟢 终点线监听中`;
-            }
-          });
-        }, { once: true });
-      }
+      // Detector init happens in enterRace() once the race tab is visible
     }
   } else {
     if (state.role !== 'finish') {
@@ -1229,6 +1159,27 @@ async function enterRace() {
   }
   DOM.vizWrap.classList.toggle('hidden', state.startMode !== 'audio');
   resetTimerUI();
+
+  // Init finish-line canvas now that the race tab is visible (offsetWidth/Height are correct)
+  if (state.role !== 'finish' && state.camGranted && DOM.raceCanvas) {
+    _initRaceCanvas();
+  }
+}
+
+function _initRaceCanvas() {
+  if (!DOM.raceCanvas || !DOM.raceVideo) return;
+  const wrap = DOM.raceVideo.parentElement;
+  const w = wrap.offsetWidth  || DOM.raceVideo.offsetWidth  || 640;
+  const h = wrap.offsetHeight || DOM.raceVideo.offsetHeight || 360;
+  const dpr = window.devicePixelRatio || 1;
+  DOM.raceCanvas.width  = Math.round(w * dpr);
+  DOM.raceCanvas.height = Math.round(h * dpr);
+  DOM.raceCanvas.style.width  = '100%';
+  DOM.raceCanvas.style.height = '100%';
+  detector.stop();
+  detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
+  detector.bindDrag(DOM.raceCanvas);
+  detector.start(null, null); // preview mode: draws finish line, no crossing callbacks
 }
 
 function beginRace() {
@@ -1258,12 +1209,10 @@ function beginRace() {
     if (dnfBtn) dnfBtn.classList.remove('hidden');
   });
 
-  // Solo mode: activate camera crossing detection
+  // Solo mode: activate camera crossing detection (canvas already init'd in enterRace)
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
-    detector.stop();
-    detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
     detector.start(
-      (laneIdx, perfTs) => {
+      (laneIdx) => {
         if (laneIdx < state.laneCount) finishLane(laneIdx);
       },
       (level) => {
@@ -2341,6 +2290,13 @@ function attachEventListeners() {
     DOM.resultsCurrent.classList.add('hidden');
     DOM.videoReplayCard.classList.add('hidden');
     loadHistory(); showToast('已清除', 'success');
+  });
+
+  // Re-size solo race canvas on orientation change / window resize
+  window.addEventListener('resize', () => {
+    if (state.role !== 'finish' && state.camGranted && DOM.raceCanvas) {
+      _initRaceCanvas();
+    }
   });
 }
 
