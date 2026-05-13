@@ -57,6 +57,14 @@
         </div>
       </button>
 
+      <button class="role-btn" id="btn-role-observer">
+        <div class="role-icon">📋</div>
+        <div class="role-info">
+          <div class="role-name">成绩端</div>
+          <div class="role-desc">实时接收成绩 · 随时导出 Excel</div>
+        </div>
+      </button>
+
       <!-- Room code (shown for start/finish roles) -->
       <div id="room-panel" class="room-panel hidden">
         <div class="room-divider">连接配对</div>
@@ -385,8 +393,42 @@
 
   </section>
 
+  <!-- ════════════════════════════════════════════════════
+       OBSERVER DEVICE — results dashboard
+       ════════════════════════════════════════════════════ -->
+  <section class="obs-main hidden" id="tab-observer-main">
+
+    <!-- Top bar -->
+    <div class="obs-topbar">
+      <div class="obs-topbar-left">
+        <span class="obs-brand">竞迹</span>
+        <span class="obs-conn-dot" id="obs-conn-dot"></span>
+        <span id="obs-state-label" class="obs-state-label">等待连接...</span>
+      </div>
+      <div class="obs-topbar-right">
+        <span id="obs-room-badge" class="obs-room-badge"></span>
+        <button id="btn-obs-export" class="btn btn-secondary btn-sm" disabled>📊 导出 Excel</button>
+      </div>
+    </div>
+
+    <!-- Race info bar -->
+    <div class="obs-info-bar" id="obs-info-bar">— 等待赛事配置 —</div>
+
+    <!-- Live results table -->
+    <div class="obs-table-wrap" id="obs-table-wrap">
+      <div class="obs-empty-hint">等待比赛开始...</div>
+    </div>
+
+    <!-- Session history (all groups this session) -->
+    <div class="obs-history-wrap" id="obs-history-wrap">
+      <div class="obs-history-title">本次赛事记录</div>
+      <div id="obs-history-list"></div>
+    </div>
+
+  </section>
+
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=8"></script>
 </body>
 </html>

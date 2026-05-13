@@ -1,19 +1,24 @@
-// Cross-device synchronization via WebSocket
+// Cross-device synchronization via WebSocket (with auto-reconnect)
 export class Sync {
   constructor() {
-    this.room       = null;
-    this.role       = null;
-    this.clientId   = null;
-    this._offset    = 0;   // performance.now() + offset ≈ server Date.now()
-    this._ws        = null;
-    this._cbs       = new Map();
-    this.connected  = false;
-    this.peerOnline = false;
-    this.peers      = [];  // array of { role, clientId } for all current peers
+    this.room              = null;
+    this.role              = null;
+    this.clientId          = null;
+    this._offset           = 0;   // performance.now() + offset ≈ server Date.now()
+    this._ws               = null;
+    this._cbs              = new Map();
+    this.connected         = false;
+    this.peerOnline        = false;
+    this.peers             = [];
+    this._autoReconnect    = true;
+    this._reconnectCount   = 0;
   }
 
   get finishPeerCount() {
     return this.peers.filter(p => p.role === 'finish').length;
+  }
+  get observerCount() {
+    return this.peers.filter(p => p.role === 'observer').length;
   }
 
   // Calibrate local clock against server (NTP-lite)
@@ -34,15 +39,24 @@ export class Sync {
   // Server-synchronized "now" in ms (comparable across devices)
   serverNow() { return performance.now() + this._offset; }
 
-  // Join a room via WebSocket
+  // Join a room via WebSocket (initial connection)
   async join(room, role) {
-    this.room = room;
-    this.role = role;
+    this.room            = room;
+    this.role            = role;
+    this._autoReconnect  = true;
+    this._reconnectCount = 0;
     await this.calibrate();
+    return this._connect(true);
+  }
 
+  // Internal: create/replace the WebSocket
+  _connect(firstTime) {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url   = `${proto}//${location.host}/ws?room=${encodeURIComponent(room)}&role=${encodeURIComponent(role)}`;
+      const url   = `${proto}//${location.host}/ws?room=${encodeURIComponent(this.room)}&role=${encodeURIComponent(this.role)}`;
       this._ws    = new WebSocket(url);
 
       this._ws.onmessage = e => {
@@ -50,20 +64,25 @@ export class Sync {
           const event = JSON.parse(e.data);
 
           if (event.type === 'JOINED') {
-            this.clientId   = event.clientId;
-            this.connected  = true;
-            this.peers      = (event.peers || []).map(r => ({ role: r, clientId: null }));
-            this.peerOnline = this.peers.length > 0;
-            resolve(event);
+            this.clientId        = event.clientId;
+            this.connected       = true;
+            this._reconnectCount = 0;
+            this.peers           = (event.peers || []).map(r => ({ role: r, clientId: null }));
+            this.peerOnline      = this.peers.length > 0;
+            if (firstTime) {
+              settle(resolve, event);
+            } else {
+              // Reconnected — fire RECONNECTED callbacks
+              (this._cbs.get('RECONNECTED') || []).forEach(cb => cb(event));
+            }
           }
 
           if (event.type === 'PEER_JOINED') {
             this.peers.push({ role: event.role, clientId: event.clientId });
             this.peerOnline = true;
           }
-
           if (event.type === 'PEER_LEFT') {
-            this.peers = this.peers.filter(p => p.clientId !== event.clientId);
+            this.peers      = this.peers.filter(p => p.clientId !== event.clientId);
             this.peerOnline = this.peers.length > 0;
           }
 
@@ -75,17 +94,41 @@ export class Sync {
       };
 
       this._ws.onerror = () => {
-        if (!this.connected) reject(new Error('WebSocket connection failed'));
+        if (firstTime) settle(reject, new Error('WebSocket connection failed'));
       };
 
       this._ws.onclose = () => {
-        if (!this.connected) reject(new Error('Connection closed before joining'));
+        const wasConnected = this.connected;
+        this.connected  = false;
+        this.peerOnline = false;
+
+        if (firstTime && !wasConnected) {
+          settle(reject, new Error('Connection closed before joining'));
+          return;
+        }
+
+        // Fire DISCONNECTED callbacks so UI can show reconnect indicator
+        (this._cbs.get('DISCONNECTED') || []).forEach(cb => cb({}));
+
+        // Auto-reconnect with exponential backoff (max 20s)
+        if (this._autoReconnect && this.room) {
+          const delay = Math.min(1200 * (1.6 ** this._reconnectCount), 20000);
+          this._reconnectCount++;
+          setTimeout(() => this._reconnect(), delay);
+        }
       };
 
-      setTimeout(() => {
-        if (!this.connected) reject(new Error('Connection timeout'));
-      }, 8000);
+      if (firstTime) {
+        setTimeout(() => settle(reject, new Error('Connection timeout')), 8000);
+      }
     });
+  }
+
+  async _reconnect() {
+    try {
+      await this.calibrate(2);
+      this._connect(false); // fire-and-forget; reconnect loop handled via onclose
+    } catch { /* onclose will retry */ }
   }
 
   // Send event to all peers in room via WebSocket
@@ -101,8 +144,9 @@ export class Sync {
   }
 
   disconnect() {
+    this._autoReconnect = false;
     this._ws?.close();
-    this._ws      = null;
+    this._ws       = null;
     this.connected = false;
     this.peers     = [];
   }

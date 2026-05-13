@@ -42,9 +42,13 @@ const state = {
   recordingStart: null,
   crossings:    [],
   finishRecorderBlob: null,
-  laneCrossings:       {},   // laneIdx → number of crossings so far
-  laneLastCrossingTime:{},   // laneIdx → raceTime (ms) at last crossing
-  lanesDone:           0,    // lanes that have completed all laps
+  laneCrossings:       {},
+  laneLastCrossingTime:{},
+  lanesDone:           0,
+  // observer device
+  obsResults:   [],   // crossings this group
+  obsHistory:   [],   // array of {round,group,results[]}
+  obsRaceInfo:  {},   // latest RACE_CONFIG payload
 };
 
 const timer    = new PrecisionTimer();
@@ -138,6 +142,14 @@ const DOM = {
   btnStop:        $('btn-race-stop'),
   btnReset:       $('btn-race-reset'),
   lanesWrap:      $('lanes-wrap'),
+  // Observer device
+  obsConnDot:     $('obs-conn-dot'),
+  obsStateLabel:  $('obs-state-label'),
+  obsRoomBadge:   $('obs-room-badge'),
+  obsInfoBar:     $('obs-info-bar'),
+  obsTableWrap:   $('obs-table-wrap'),
+  obsHistoryList: $('obs-history-list'),
+  btnObsExport:   $('btn-obs-export'),
   // Setup
   orgName:        $('org-name'),
   // Results
@@ -419,7 +431,8 @@ function applySettingsToDOM() {
 // ── Role selection ─────────────────────────────────────
 function selectRole(role) {
   selectedRole = role;
-  [DOM.btnRoleSolo, DOM.btnRoleStart, DOM.btnRoleFinish].forEach(b => b.classList.remove('selected'));
+  [DOM.btnRoleSolo, DOM.btnRoleStart, DOM.btnRoleFinish, $('btn-role-observer')]
+    .forEach(b => b?.classList.remove('selected'));
 
   if (role === 'solo') {
     DOM.roomPanel.classList.add('hidden');
@@ -439,6 +452,12 @@ function selectRole(role) {
     DOM.roomCodeInputW.classList.remove('hidden');
     DOM.btnRoleConfirm.classList.add('hidden');
     DOM.btnRoleFinish.classList.add('selected');
+  } else if (role === 'observer') {
+    DOM.roomPanel.classList.remove('hidden');
+    DOM.roomCodeSetWrap.classList.add('hidden');
+    DOM.roomCodeInputW.classList.remove('hidden');
+    DOM.btnRoleConfirm.classList.add('hidden');
+    $('btn-role-observer')?.classList.add('selected');
   }
 }
 
@@ -518,6 +537,66 @@ function registerSyncEvents() {
     updateConnStatus(sync.peerOnline);
     updateFinishBadge();
   });
+  sync.on('DISCONNECTED', () => {
+    showToast('⚠️ 连接断开，正在重连...', 'warn');
+    updateConnStatus(false);
+    if (state.role === 'observer') obsSetConnected(false);
+  });
+  sync.on('RECONNECTED', () => {
+    showToast('✅ 已重新连接', 'success');
+    updateConnStatus(true);
+    if (state.role === 'observer') obsSetConnected(true);
+    // Re-push current config to newly reconnected peers
+    if (state.role === 'start') setTimeout(broadcastConfig, 300);
+  });
+
+  // ── Observer events ──────────────────────────────────
+  sync.on('RACE_CONFIG', e => {
+    if (state.role === 'observer') {
+      state.obsRaceInfo = e;
+      obsUpdateInfoBar();
+      obsSetConnected(true);
+    }
+  });
+  sync.on('RACE_START', e => {
+    if (state.role === 'observer') {
+      state.raceStartServerTime = e._serverTime;
+      state.obsResults = [];
+      obsRenderTable();
+      obsSetState('🏃 比赛进行中...');
+      if (DOM.btnObsExport) DOM.btnObsExport.disabled = true;
+    }
+  });
+  sync.on('CROSSING', e => {
+    if (state.role === 'observer') {
+      state.obsResults.push(e);
+      obsRenderTable();
+    }
+  });
+  sync.on('CROSSING_SPLIT', e => {
+    if (state.role === 'observer') obsAddSplit(e);
+  });
+  sync.on('RACE_END', () => {
+    if (state.role === 'observer') {
+      const ri = state.obsRaceInfo;
+      state.obsHistory.unshift({
+        round:   ri.round || state.currentRound,
+        group:   ri.group || state.currentGroup,
+        dist:    ri.distance,
+        results: [...state.obsResults],
+      });
+      obsRenderHistory();
+      obsSetState('✅ 比赛结束 — 可导出');
+      if (DOM.btnObsExport) DOM.btnObsExport.disabled = false;
+    }
+  });
+  sync.on('LANE_DNF', e => {
+    if (state.role === 'observer') {
+      state.obsResults.push({ ...e, isDNF: true });
+      obsRenderTable();
+    }
+  });
+
   sync.on('RACE_CONFIG', e => {
     if (state.role !== 'finish') return;
     if (e.lapsNeeded)              state.lapCount    = e.lapsNeeded;
@@ -605,12 +684,19 @@ function confirmRole() {
       DOM.syncBadge.classList.remove('hidden');
       DOM.syncRoom.textContent = state.roomCode;
     }
-  } else {
+  } else if (state.role === 'finish') {
     DOM.tabBarStart.classList.add('hidden');
     DOM.appTitle.textContent = '🏁 终点端';
     DOM.syncBadge.classList.remove('hidden');
     DOM.syncRoom.textContent = state.roomCode;
     $('tab-finish-main').classList.remove('hidden');
+  } else if (state.role === 'observer') {
+    DOM.tabBarStart.classList.add('hidden');
+    DOM.appTitle.textContent = '📋 成绩端';
+    DOM.syncBadge.classList.remove('hidden');
+    DOM.syncRoom.textContent = state.roomCode;
+    $('tab-observer-main').classList.remove('hidden');
+    if (DOM.obsRoomBadge) DOM.obsRoomBadge.textContent = `房间 ${state.roomCode}`;
   }
 
   // Auto-request permissions immediately — no extra overlay click needed
@@ -1367,6 +1453,114 @@ function resetFinishDevice() {
   showToast('终点端已重置，等待下一组', 'success');
 }
 
+// ── Observer UI ────────────────────────────────────────
+function obsSetConnected(ok) {
+  if (DOM.obsConnDot) DOM.obsConnDot.className = `obs-conn-dot ${ok ? 'online' : 'offline'}`;
+}
+function obsSetState(msg) {
+  if (DOM.obsStateLabel) DOM.obsStateLabel.textContent = msg;
+}
+function obsUpdateInfoBar() {
+  const r = state.obsRaceInfo;
+  if (!DOM.obsInfoBar || !r.lapsNeeded) return;
+  const org = r.orgName ? `${r.orgName} · ` : '';
+  const lapStr = r.lapsNeeded > 1 ? ` · ${r.lapsNeeded}圈` : '';
+  DOM.obsInfoBar.textContent =
+    `${org}${r.distance || '—'}m${lapStr} · ${r.laneCount || '—'}人 · 第${r.round||'?'}轮 第${r.group||'?'}组`;
+}
+function obsRenderTable() {
+  if (!DOM.obsTableWrap) return;
+  const medals = ['🥇','🥈','🥉'];
+  const rows = state.obsResults.map((e, i) => {
+    if (e.isDNF) return `<tr class="obs-dnf"><td>DNF</td><td>${(e.laneIdx??'')+ 1}</td><td>${e.athleteName||''}</td><td>—</td></tr>`;
+    return `<tr class="${i===0?'obs-gold':''}">
+      <td>${medals[i]||`#${i+1}`}</td>
+      <td>${(e.laneIdx??i)+1}</td>
+      <td>${e.athleteName||''}</td>
+      <td class="obs-time">${PrecisionTimer.formatFull(e.raceTime)}</td>
+    </tr>`;
+  }).join('');
+  DOM.obsTableWrap.innerHTML = rows
+    ? `<table class="obs-table"><thead><tr><th>名次</th><th>道次</th><th>姓名</th><th>成绩</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="obs-empty-hint">等待运动员过线...</div>';
+}
+function obsAddSplit(e) {
+  if (!DOM.obsTableWrap) return;
+  // Find existing row for this lane and add a split badge
+  const existing = DOM.obsTableWrap.querySelector(`[data-lane="${e.laneIdx}"]`);
+  if (existing) {
+    const sp = document.createElement('span');
+    sp.className = 'obs-split';
+    sp.textContent = `第${e.lapNum}圈 ${PrecisionTimer.formatFull(e.raceTime)}`;
+    existing.appendChild(sp);
+  }
+}
+function obsRenderHistory() {
+  if (!DOM.obsHistoryList) return;
+  DOM.obsHistoryList.innerHTML = state.obsHistory.map(g => {
+    const top = g.results.filter(r => !r.isDNF)
+      .sort((a,b) => a.raceTime - b.raceTime)
+      .slice(0,3)
+      .map((r,i) => `<span class="obs-hist-item">${['🥇','🥈','🥉'][i]} ${r.athleteName} ${PrecisionTimer.formatFull(r.raceTime)}</span>`)
+      .join('');
+    return `<div class="obs-hist-group">
+      <span class="obs-hist-label">第${g.round}轮 第${g.group}组${g.dist?` · ${g.dist}m`:''}</span>
+      <div class="obs-hist-results">${top||'—'}</div>
+    </div>`;
+  }).join('');
+}
+function obsExportGroup() {
+  if (!isPremium()) { showUpgradeDialog(); return; }
+  const ri = state.obsRaceInfo;
+  const results = state.obsResults.filter(r => !r.isDNF).sort((a,b) => a.raceTime - b.raceTime);
+  const dnfs    = state.obsResults.filter(r => r.isDNF);
+  const medals  = ['🥇','🥈','🥉'];
+  const org     = DOM.orgName?.value?.trim() || '';
+
+  const rows = [
+    ...results.map((r,i) => `<tr class="${i===0?'gold-row':''}">
+      <td>${medals[i]||i+1}</td><td>${(r.laneIdx??i)+1}</td>
+      <td>${r.athleteName||''}</td>
+      <td class="time-cell">${PrecisionTimer.formatFull(r.raceTime)}</td>
+    </tr>`),
+    ...dnfs.map(r => `<tr class="dnf-row"><td>DNF</td><td>${(r.laneIdx??'')+1}</td><td>${r.athleteName||''}</td><td>DNF</td></tr>`),
+  ].join('');
+
+  const lapStr = ri.lapsNeeded > 1 ? ` · ${ri.lapsNeeded}圈` : '';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;margin:24px;color:#222}
+  .brand{font-size:22px;font-weight:900;color:#ff6200;letter-spacing:2px}
+  .meta{font-size:13px;color:#555;line-height:2;margin-bottom:14px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{background:#ff6200;color:#fff;padding:9px 12px;text-align:center}
+  td{padding:8px 12px;text-align:center;border-bottom:1px solid #eee}
+  .gold-row td{background:#fffde7;font-weight:700}
+  .dnf-row td{color:#aaa}
+  .time-cell{font-family:monospace;font-size:16px;font-weight:700;color:#ff6200}
+  .footer{font-size:11px;color:#bbb;margin-top:16px}
+</style></head><body>
+<div class="brand">竞迹</div>
+<div class="meta">
+  ${org?`<b>学校/组织：</b>${org}&emsp;`:''}
+  ${ri.distance?`<b>距离：</b>${ri.distance}m${lapStr}&emsp;`:''}
+  <b>第${ri.round||'?'}轮 · 第${ri.group||'?'}组</b>
+</div>
+<table><thead><tr><th>名次</th><th>道次</th><th>姓名</th><th>成绩</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<div class="footer">由 竞迹 JingJi 成绩端生成 · ${new Date().toLocaleString('zh-CN')}</div>
+</body></html>`;
+
+  const blob  = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a');
+  const fname = [org, ri.distance?`${ri.distance}m`:'', `第${ri.round||1}轮第${ri.group||1}组`].filter(Boolean).join('_');
+  a.href = url; a.download = `${fname}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('✅ 成绩单已导出', 'success');
+}
+
 // ── Finish device conn status ──────────────────────────
 function updateConnStatus(connected) {
   if (DOM.fsConnDot) DOM.fsConnDot.className = `fs-conn-dot ${connected ? 'connected' : 'error'}`;
@@ -1574,6 +1768,7 @@ function attachEventListeners() {
   DOM.btnRoleSolo.addEventListener('click',   () => selectRole('solo'));
   DOM.btnRoleStart.addEventListener('click',  () => selectRole('start'));
   DOM.btnRoleFinish.addEventListener('click', () => selectRole('finish'));
+  $('btn-role-observer')?.addEventListener('click', () => selectRole('observer'));
   DOM.btnConnect.addEventListener('click',    () => connectToRoom());
   DOM.btnRoleConfirm.addEventListener('click',() => confirmRole());
 
@@ -1593,7 +1788,8 @@ function attachEventListeners() {
   // Start/solo tabs
   document.querySelectorAll('#tab-bar-start .tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.tab === 'race' && !state.raceStarted && !state.raceFinished) {
+      // Only build lanes if none exist yet (enterRace handles the normal case)
+      if (btn.dataset.tab === 'race' && state.lanes.length === 0) {
         buildLanes(); renderLaneCards();
       }
       showTab(btn.dataset.tab);
@@ -1740,6 +1936,7 @@ function attachEventListeners() {
   // Results actions
   DOM.btnDlVideo?.addEventListener('click',    () => recorder.download(DOM.raceName.value));
   DOM.btnExportCsv?.addEventListener('click',  () => exportResults());
+  DOM.btnObsExport?.addEventListener('click',  () => obsExportGroup());
   DOM.btnClearRes?.addEventListener('click',   () => {
     if (!confirm('清除所有历史成绩？')) return;
     localStorage.removeItem('race-history');
