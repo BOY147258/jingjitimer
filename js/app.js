@@ -2298,6 +2298,27 @@ function attachEventListeners() {
       _initRaceCanvas();
     }
   });
+
+  // Help / guide buttons
+  const openGuide = () => $('guide-overlay')?.classList.remove('hidden');
+  const closeGuide = () => $('guide-overlay')?.classList.add('hidden');
+  $('btn-help')?.addEventListener('click', openGuide);
+  $('btn-fs-guide')?.addEventListener('click', () => {
+    DOM.fsSettingsPanel?.classList.add('hidden');
+    openGuide();
+  });
+  $('btn-guide-close')?.addEventListener('click', closeGuide);
+  $('btn-guide-ok')?.addEventListener('click', closeGuide);
+  $('guide-overlay')?.addEventListener('click', e => {
+    if (e.target.id === 'guide-overlay') closeGuide();
+  });
+
+  // Reset lane dividers to equal spacing
+  const resetLaneDividers = () => {
+    detector._resetDividers(state.laneCount);
+    showToast('道次分界线已重置', 'success');
+  };
+  $('btn-fs-reset-lanes')?.addEventListener('click', resetLaneDividers);
 }
 
 // ── Service Worker ─────────────────────────────────────

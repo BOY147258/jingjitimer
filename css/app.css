@@ -1781,3 +1781,147 @@ input[type="text"]:focus { border-color: var(--accent); }
   white-space: nowrap;
 }
 .obs-hist-item.gold { color: var(--yellow); font-weight: 700; }
+
+/* ── Help button in header ─────────────────────────── */
+.btn-help-header {
+  background: none;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  color: var(--text-muted);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 6px;
+  flex-shrink: 0;
+  transition: border-color var(--transition), color var(--transition);
+}
+.btn-help-header:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Usage Guide Modal ─────────────────────────────── */
+.guide-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8,8,16,0.88);
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 env(safe-area-inset-bottom);
+}
+.guide-overlay.hidden { display: none; }
+
+.guide-card {
+  background: var(--bg-card);
+  border-radius: 22px 22px 0 0;
+  border: 1px solid var(--border);
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 24px 20px 32px;
+  position: relative;
+}
+.guide-close {
+  position: absolute;
+  top: 14px; right: 16px;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: var(--text-muted);
+  border-radius: 50%;
+  width: 30px; height: 30px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.guide-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+.guide-section { margin-bottom: 18px; }
+.guide-sec-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--yellow);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+.guide-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.guide-list li, .guide-list ol li {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.5;
+}
+.guide-list li::before { content: '·'; position: absolute; left: 4px; color: var(--accent); }
+ol.guide-list { counter-reset: guide-counter; }
+ol.guide-list li { counter-increment: guide-counter; }
+ol.guide-list li::before { content: counter(guide-counter) '.'; font-size: 11px; top: 1px; }
+.guide-list b { color: var(--text); }
+
+/* Camera diagram */
+.guide-diagram {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.gd-track {
+  flex: 1;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.gd-lane {
+  font-size: 10px;
+  color: var(--text-muted);
+  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  padding: 4px 6px;
+  text-align: right;
+}
+.gd-lane:last-of-type { border-bottom: none; }
+.gd-line {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--red);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gd-line::after {
+  content: '终点';
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  color: var(--red);
+  white-space: nowrap;
+}
+.gd-phone-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.gd-phone {
+  font-size: 28px;
+  text-align: center;
+  line-height: 1.2;
+}
+.gd-phone span { font-size: 10px; color: var(--accent); }
+.gd-height { font-size: 10px; color: var(--text-muted); }

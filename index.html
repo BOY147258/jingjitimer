@@ -118,6 +118,7 @@
   <!-- ── Header ──────────────────────────────────────── -->
   <header class="app-header">
     <span class="app-title" id="app-title"><span class="brand-jj">竞迹</span></span>
+    <button id="btn-help" class="btn-help-header" aria-label="使用说明">?</button>
     <div class="header-status">
       <div id="finish-count-badge" class="finish-count-badge hidden"></div>
       <div id="sync-badge" class="sync-badge hidden">📡 <span id="sync-room">—</span></div>
@@ -404,6 +405,8 @@
         <div class="monitor-hint" id="fs-detect-status">等待摄像头...</div>
       </div>
       <button id="btn-fs-flip" class="btn btn-ghost btn-sm mt-8" style="width:100%">🔄 切换前/后摄像头</button>
+      <button id="btn-fs-reset-lanes" class="btn btn-ghost btn-sm mt-8" style="width:100%">⊟ 重置道次分界线</button>
+      <button id="btn-fs-guide" class="btn btn-ghost btn-sm mt-4" style="width:100%">📖 机位使用说明</button>
       <button id="btn-fs-settings-close" class="btn btn-ghost mt-8" style="width:100%">关闭</button>
     </div>
 
@@ -443,8 +446,80 @@
 
   </section>
 
+  <!-- ── Usage Guide Modal ─────────────────────────────── -->
+  <div id="guide-overlay" class="guide-overlay hidden">
+    <div class="guide-card">
+      <button class="guide-close" id="btn-guide-close">✕</button>
+      <div class="guide-title">📖 竞迹使用说明</div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">📱 终点摄像头怎么放</div>
+        <div class="guide-diagram">
+          <div class="gd-track">
+            <div class="gd-lane">道1</div>
+            <div class="gd-lane">道2</div>
+            <div class="gd-lane">道3</div>
+            <div class="gd-lane">道4</div>
+            <div class="gd-line">终点线</div>
+          </div>
+          <div class="gd-phone-wrap">
+            <div class="gd-phone">📱<br><span>侧面</span></div>
+            <div class="gd-height">↕ 0.8–1.2m</div>
+          </div>
+        </div>
+        <ul class="guide-list">
+          <li>手机<b>横向（landscape）</b>放在三脚架上</li>
+          <li>摄像头对准跑道，从<b>侧面</b>拍，不要俯拍</li>
+          <li>高度约 <b>0.8–1.2 米</b>（拍到运动员腰部位置）</li>
+          <li>终点线在画面<b>正中竖向</b>——拖动彩色竖线对准</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">↕ 道次分界线怎么调</div>
+        <ul class="guide-list">
+          <li>画面里白色<b>横虚线</b>是道次分界，左边标有「1道」「2道」</li>
+          <li><b>用手指拖动白色圆圈（↕）</b>调整到和跑道道次对齐</li>
+          <li>点「重置道次分界线」恢复均等间距</li>
+          <li>道次从屏幕<b>下方到上方</b>依次是 1道→N道（从跑道外侧看）</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">🏁 终点线怎么对准</div>
+        <ul class="guide-list">
+          <li>彩色<b>竖线（↔）</b>就是识别用的终点线，左右拖动</li>
+          <li>把它拖到和真实终点线重合的位置</li>
+          <li>线变<b>红色</b>说明检测到动作；绿色=安静待机</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">📋 成绩端连不上怎么办</div>
+        <ul class="guide-list">
+          <li>成绩端必须在<b>发令前</b>连接好（输入相同房间码）</li>
+          <li>如果断线，页面会自动重连，稍等片刻</li>
+          <li>确保发令端、终点端、成绩端使用<b>同一房间码</b></li>
+          <li>若一直无法连接，退出重新选角色再连接</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">⚙️ 多设备工作流程</div>
+        <ol class="guide-list">
+          <li>发令端：设置道数、项目，等终点端/成绩端连接</li>
+          <li>终点端：调好摄像头和道次线，等待"比赛开始"</li>
+          <li>成绩端：加入同一房间，实时接收成绩</li>
+          <li>发令端按「发令/开始」，三端自动同步计时</li>
+        </ol>
+      </div>
+
+      <button class="btn btn-primary mt-16" id="btn-guide-ok" style="width:100%">明白了</button>
+    </div>
+  </div>
+
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=13"></script>
+<script type="module" src="js/app.js?v=14"></script>
 </body>
 </html>
