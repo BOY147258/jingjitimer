@@ -243,6 +243,32 @@ function recomputeLaps() {
   saveSettings();
 }
 
+// Read athlete names live from input fields (no need to call buildLanes first)
+function getCurrentRoster() {
+  return Array.from({ length: state.laneCount }, (_, i) => {
+    const inp = $(`lane-input-${i}`);
+    return { id: i, name: inp?.value.trim() || `运动员 ${i + 1}` };
+  });
+}
+
+// Push current config to all finish devices immediately
+function broadcastConfig() {
+  if (state.role !== 'start' || !sync.connected) return;
+  sync.send('RACE_CONFIG', {
+    lapsNeeded:  state.lapCount,
+    distance:    state.distance,
+    trackLength: state.trackLength,
+    laneCount:   state.laneCount,
+    roster:      getCurrentRoster(),
+  });
+}
+
+let _configTimer = null;
+function debouncedBroadcastConfig() {
+  clearTimeout(_configTimer);
+  _configTimer = setTimeout(broadcastConfig, 350);
+}
+
 function saveSettings() {
   try {
     localStorage.setItem('race-settings', JSON.stringify({
@@ -365,6 +391,8 @@ function registerSyncEvents() {
       showToast(`终点端已上线（共 ${fc} 个）`, 'success');
       updateConnStatus(true);
       if (DOM.roomStatus) DOM.roomStatus.textContent = `✅ 已连接，终点端 ${fc} 个在线`;
+      // Push current config immediately so finish device syncs right away
+      if (state.role === 'start') setTimeout(broadcastConfig, 300);
     } else {
       showToast('发令端已上线', 'success');
       updateConnStatus(true);
@@ -384,15 +412,30 @@ function registerSyncEvents() {
   });
   sync.on('RACE_CONFIG', e => {
     if (state.role !== 'finish') return;
-    if (e.lapsNeeded)   state.lapCount    = e.lapsNeeded;
-    if (e.distance)     state.distance    = e.distance;
-    if (e.trackLength)  state.trackLength = e.trackLength;
+    if (e.lapsNeeded)              state.lapCount    = e.lapsNeeded;
+    if (e.distance)                state.distance    = e.distance;
+    if (e.trackLength)             state.trackLength = e.trackLength;
+    const newCount = e.laneCount || (Array.isArray(e.roster) ? e.roster.length : state.laneCount);
     if (Array.isArray(e.roster) && e.roster.length) {
       state.laneCount = e.roster.length;
       state.lanes = e.roster.map(r => ({
         id: r.id, name: r.name, time: null, rank: null, dnf: false, lapTimes: [], currentLap: 0,
       }));
+    } else if (newCount !== state.laneCount) {
+      state.laneCount = newCount;
     }
+
+    // Re-init detector with new lane count (only when not mid-race)
+    if (!state.raceStarted && DOM.finishVideoFs?.srcObject) {
+      detector.stop();
+      detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
+      detector.bindDrag(DOM.finishCanvasFs);
+      detector.start(null, level => {
+        const pct = Math.min(100, level * 100);
+        if (DOM.fsLevelFill) DOM.fsLevelFill.style.width = `${pct}%`;
+      });
+    }
+
     // Show confirmed config in status label
     if (DOM.fsStateLabel && !state.raceStarted) {
       const lapStr = state.lapCount > 1 ? ` · ${state.lapCount}圈` : '';
@@ -620,6 +663,10 @@ function buildLaneInputs() {
       <input type="text" id="lane-input-${i}" placeholder="运动员 ${i+1}" value="运动员 ${i+1}">`;
     DOM.laneInputs.appendChild(row);
   }
+  // Sync name changes to finish device in real time
+  DOM.laneInputs.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', debouncedBroadcastConfig);
+  });
 }
 
 function buildLanes() {
@@ -1421,20 +1468,20 @@ function attachEventListeners() {
 
   // Lane count
   $('btn-lane-minus').addEventListener('click', () => {
-    if (state.laneCount > 1) { state.laneCount--; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); }
+    if (state.laneCount > 1) { state.laneCount--; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); broadcastConfig(); }
   });
   $('btn-lane-plus').addEventListener('click', () => {
-    if (state.laneCount < 12) { state.laneCount++; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); }
+    if (state.laneCount < 12) { state.laneCount++; DOM.laneCountDisp.textContent = state.laneCount; buildLaneInputs(); saveSettings(); broadcastConfig(); }
   });
 
   // Lap count
   const lapMinus = $('btn-lap-minus');
   const lapPlus  = $('btn-lap-plus');
   if (lapMinus) lapMinus.addEventListener('click', () => {
-    if (state.lapCount > 1) { state.lapCount--; updateLapDisplay(); }
+    if (state.lapCount > 1) { state.lapCount--; updateLapDisplay(); saveSettings(); broadcastConfig(); }
   });
   if (lapPlus) lapPlus.addEventListener('click', () => {
-    if (state.lapCount < 50) { state.lapCount++; updateLapDisplay(); }
+    if (state.lapCount < 50) { state.lapCount++; updateLapDisplay(); saveSettings(); broadcastConfig(); }
   });
 
   // Round / group
@@ -1508,12 +1555,13 @@ function attachEventListeners() {
     } else {
       customRow?.classList.add('hidden');
       state.distance = Number(this.value);
-      recomputeLaps();
+      recomputeLaps();   // saves + broadcasts inside
+      broadcastConfig();
     }
   });
   $('custom-dist-input')?.addEventListener('input', function() {
     const v = parseFloat(this.value);
-    if (v > 0) { state.distance = v; recomputeLaps(); }
+    if (v > 0) { state.distance = v; recomputeLaps(); broadcastConfig(); }
   });
 
   // Track length toggle
@@ -1521,13 +1569,13 @@ function attachEventListeners() {
     state.trackLength = 200;
     $('btn-track-200').classList.add('active');
     $('btn-track-400').classList.remove('active');
-    recomputeLaps();
+    recomputeLaps(); broadcastConfig();
   });
   $('btn-track-400')?.addEventListener('click', () => {
     state.trackLength = 400;
     $('btn-track-400').classList.add('active');
     $('btn-track-200').classList.remove('active');
-    recomputeLaps();
+    recomputeLaps(); broadcastConfig();
   });
 
   // Results actions
