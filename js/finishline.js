@@ -325,6 +325,28 @@ export class FinishLineDetector {
     ctx.restore();
   }
 
+  // Capture current video frame as data URL (called at crossing moment)
+  captureFrame(width = 320, height = 180) {
+    if (!this._video || this._video.readyState < 2) return null;
+    try {
+      const c   = document.createElement('canvas');
+      c.width   = width;
+      c.height  = height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(this._video, 0, 0, width, height);
+
+      // Draw finish line marker on the capture
+      const lx = Math.round(this._linePos * width);
+      ctx.strokeStyle = 'rgba(255,23,68,0.85)';
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, height); ctx.stroke();
+      ctx.setLineDash([]);
+
+      return c.toDataURL('image/jpeg', 0.7);
+    } catch { return null; }
+  }
+
   // Allow user to reposition finish line and lane dividers by touch/click
   bindDrag(displayCanvas) {
     displayCanvas.style.touchAction = 'none';

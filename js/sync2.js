@@ -12,6 +12,7 @@ export class Sync {
     this.peers             = [];
     this._autoReconnect    = true;
     this._reconnectCount   = 0;
+    this.rtt               = null;  // median one-way latency in ms (set after calibrate)
   }
 
   get finishPeerCount() {
@@ -24,16 +25,21 @@ export class Sync {
   // Calibrate local clock against server (NTP-lite)
   async calibrate(attempts = 5) {
     const offsets = [];
+    const rtts    = [];
     for (let i = 0; i < attempts; i++) {
       const t1 = performance.now();
       const r  = await fetch('/ping');
       const t4 = performance.now();
       const { serverTime } = await r.json();
       offsets.push(serverTime - (t1 + (t4 - t1) / 2));
+      rtts.push(t4 - t1);
       if (i < attempts - 1) await new Promise(r => setTimeout(r, 40));
     }
     offsets.sort((a, b) => a - b);
     this._offset = offsets[Math.floor(offsets.length / 2)];
+    // Expose median one-way latency estimate in ms
+    rtts.sort((a, b) => a - b);
+    this.rtt = Math.round(rtts[Math.floor(rtts.length / 2)] / 2);
   }
 
   // Server-synchronized "now" in ms (comparable across devices)

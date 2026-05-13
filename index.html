@@ -119,6 +119,7 @@
     <div class="header-status">
       <div id="finish-count-badge" class="finish-count-badge hidden"></div>
       <div id="sync-badge" class="sync-badge hidden">📡 <span id="sync-room">—</span></div>
+      <span id="latency-badge" class="latency-badge"></span>
       <div class="status-pill" id="pill-mic"><span class="dot"></span><span class="label">MIC</span></div>
       <div class="status-pill" id="pill-cam"><span class="dot"></span><span class="label">CAM</span></div>
     </div>
@@ -220,8 +221,13 @@
     </div>
 
     <div class="card" id="card-athletes">
-      <div class="card-title">🏃 运动员名单</div>
+      <div class="card-title-row">
+        <div class="card-title">🏃 运动员名单</div>
+        <button class="btn-roster-import" id="btn-roster-import">📋 导入名单</button>
+      </div>
       <div id="lane-inputs"></div>
+      <input type="file" id="roster-file-input" accept=".csv,.txt" style="display:none">
+      <div class="roster-hint">支持 CSV 导入：每行一名，或"道次,姓名"格式</div>
     </div>
 
     <div class="card">
@@ -444,6 +450,6 @@
 
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=9"></script>
+<script type="module" src="js/app.js?v=10"></script>
 </body>
 </html>

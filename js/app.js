@@ -489,8 +489,9 @@ async function connectToRoom() {
 
   try {
     await sync.join(state.roomCode, selectedRole);
-    state.clientId    = sync.clientId;
+    state.clientId      = sync.clientId;
     state.peerConnected = sync.peerOnline;
+    updateLatencyBadge();
 
     const fc = sync.finishPeerCount;
     DOM.roomStatus.textContent = fc > 0
@@ -546,8 +547,8 @@ function registerSyncEvents() {
   sync.on('RECONNECTED', () => {
     showToast('✅ 已重新连接', 'success');
     updateConnStatus(true);
+    updateLatencyBadge();
     if (state.role === 'observer') obsSetConnected(true);
-    // Re-push current config to newly reconnected peers
     if (state.role === 'start') setTimeout(broadcastConfig, 300);
   });
 
@@ -1296,13 +1297,15 @@ function showRaceEndActions(race, blob) {
       <button class="btn btn-start rend-btn-next" id="btn-next-group">▶ 下一组</button>
       <button class="btn btn-secondary rend-btn-round" id="btn-next-round">▲ 下一轮</button>
     </div>
-    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:8px;width:100%">查看完整成绩</button>`;
+    <button class="btn btn-ghost rend-btn-full" id="btn-share-results" style="margin-top:8px;width:100%">📲 分享成绩</button>
+    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:6px;width:100%">查看完整成绩</button>`;
 
   DOM.lanesWrap.insertAdjacentElement('beforebegin', card);
 
-  $('btn-next-group').onclick  = () => { card.remove(); nextGroup(false); };
-  $('btn-next-round').onclick  = () => { card.remove(); nextGroup(true); };
-  $('btn-see-results').onclick = () => { renderResults(race, blob); showTab('results'); };
+  $('btn-next-group').onclick    = () => { card.remove(); nextGroup(false); };
+  $('btn-next-round').onclick    = () => { card.remove(); nextGroup(true); };
+  $('btn-share-results').onclick = () => showShareCard(race);
+  $('btn-see-results').onclick   = () => { renderResults(race, blob); showTab('results'); };
 
   // Play victory sound for winner
   setTimeout(() => { beep(1047, 150); setTimeout(() => beep(1319, 150), 180); setTimeout(() => beep(1568, 300), 360); }, 200);
@@ -1472,30 +1475,36 @@ function handleFinishCrossing(laneIdx, perfTs) {
   state.laneCrossings[laneIdx]++;
   const crossingNum = state.laneCrossings[laneIdx];
 
-  const laneName = state.lanes[laneIdx]?.name || `运动员 ${laneIdx + 1}`;
+  const laneName  = state.lanes[laneIdx]?.name || `运动员 ${laneIdx + 1}`;
+  const lapDistM  = state.distance / state.lapCount;              // metres per lap
+  const paceSecKm = lapDistM > 0 ? (lapTime / 1000) / (lapDistM / 1000) : 0; // s/km
+  const paceMin   = Math.floor(paceSecKm / 60);
+  const paceSec   = Math.round(paceSecKm % 60);
+  const paceStr   = lapDistM >= 200 ? `${paceMin}'${String(paceSec).padStart(2,'0')}"/km` : null;
 
   if (crossingNum < state.lapCount) {
-    // Intermediate lap — show split
+    // Intermediate lap — show split + pace
     beep(440, 80);
     if (navigator.vibrate) navigator.vibrate(60);
-    renderSplitCard(laneIdx, crossingNum, raceTime, lapTime, laneName);
-    sync.send('CROSSING_SPLIT', { laneIdx, raceTime, lapTime, lapNum: crossingNum, athleteName: laneName });
-    showToast(`${laneName} 第${crossingNum}圈 ${PrecisionTimer.formatFull(raceTime)}`, 'info');
+    renderSplitCard(laneIdx, crossingNum, raceTime, lapTime, laneName, paceStr);
+    sync.send('CROSSING_SPLIT', { laneIdx, raceTime, lapTime, lapNum: crossingNum, athleteName: laneName, paceStr });
+    showToast(`${laneName} 第${crossingNum}圈 ${PrecisionTimer.formatFull(raceTime)}${paceStr ? '  ' + paceStr : ''}`, 'info');
     return;
   }
 
-  // Final crossing — record finish
+  // Final crossing — capture frame + record finish
+  const photoDataUrl = detector.captureFrame();
   state.lanesDone++;
   const rank = state.lanesDone;
 
-  const crossing = { laneIdx, raceTime, videoOffset, rank, name: laneName, perfTs };
+  const crossing = { laneIdx, raceTime, videoOffset, rank, name: laneName, perfTs, photo: photoDataUrl, paceStr };
   state.crossings.push(crossing);
 
   renderCrossingCard(crossing);
   beep(rank === 1 ? 880 : 660, 120);
   if (navigator.vibrate) navigator.vibrate(rank === 1 ? [80, 40, 80] : 120);
 
-  sync.send('CROSSING', { laneIdx, raceTime, rank, athleteName: laneName, lapTime });
+  sync.send('CROSSING', { laneIdx, raceTime, rank, athleteName: laneName, lapTime, paceStr });
   showToast(`🏁 #${rank} ${laneName}  ${PrecisionTimer.formatFull(raceTime)}`, 'success');
 
   if (state.lanesDone >= state.laneCount) {
@@ -1507,17 +1516,25 @@ function renderCrossingCard(crossing) {
   const medals = ['🥇','🥈','🥉'];
   const card   = document.createElement('div');
   card.className = 'fs-result-card';
+  const photoHtml = crossing.photo
+    ? `<img class="fsr-photo" src="${crossing.photo}" alt="冲线截图">`
+    : '';
+  const paceHtml = crossing.paceStr
+    ? `<div class="fsr-pace">${crossing.paceStr}</div>`
+    : '';
   card.innerHTML = `
+    ${photoHtml}
     <div class="fsr-rank">${medals[crossing.rank-1] || `#${crossing.rank}`}</div>
     <div class="fsr-info">
       <div class="fsr-name">${crossing.name}</div>
       <div class="fsr-time">${PrecisionTimer.formatFull(crossing.raceTime)}</div>
+      ${paceHtml}
     </div>`;
   if (DOM.fsResults) DOM.fsResults.appendChild(card);
   requestAnimationFrame(() => card.classList.add('visible'));
 }
 
-function renderSplitCard(laneIdx, lapNum, raceTime, lapTime, laneName) {
+function renderSplitCard(laneIdx, lapNum, raceTime, lapTime, laneName, paceStr) {
   if (!DOM.fsResults) return;
   const card = document.createElement('div');
   card.className = 'fs-result-card fs-split-card';
@@ -1528,6 +1545,7 @@ function renderSplitCard(laneIdx, lapNum, raceTime, lapTime, laneName) {
       <div class="fsr-time" style="font-size:14px">${PrecisionTimer.formatFull(raceTime)}
         <span style="color:#888;font-size:11px;margin-left:4px">+${PrecisionTimer.formatFull(lapTime)}</span>
       </div>
+      ${paceStr ? `<div class="fsr-pace">${paceStr}</div>` : ''}
     </div>`;
   DOM.fsResults.appendChild(card);
   requestAnimationFrame(() => card.classList.add('visible'));
@@ -1705,6 +1723,139 @@ function obsExportGroup() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast('✅ 成绩单已导出', 'success');
+}
+
+// ── Network latency display ────────────────────────────
+function updateLatencyBadge() {
+  const badge = $('latency-badge');
+  if (!badge) return;
+  const rtt = sync.rtt;
+  if (rtt === null || rtt === undefined) { badge.textContent = ''; return; }
+  badge.textContent = `${rtt}ms`;
+  badge.className = 'latency-badge ' + (rtt < 30 ? 'lat-good' : rtt < 80 ? 'lat-ok' : 'lat-bad');
+}
+
+// ── Results share card (canvas image + QR) ────────────
+function showShareCard(race) {
+  const sorted = race.lanes.filter(l => l.time != null).sort((a,b) => a.time - b.time);
+  const org    = DOM.orgName?.value?.trim() || '';
+  const medals = ['🥇','🥈','🥉'];
+
+  // Build canvas results image
+  const W = 480, H = 80 + 52 * (sorted.length + 1) + 60;
+  const cv  = document.createElement('canvas');
+  cv.width  = W * 2; cv.height = H * 2;  // 2x for retina
+  const ctx = cv.getContext('2d');
+  ctx.scale(2, 2);
+
+  // Background
+  ctx.fillStyle = '#080810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Brand bar
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#ff6200'); grad.addColorStop(1, '#ff9f45');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, 6);
+
+  // Title
+  ctx.fillStyle = '#ff6200';
+  ctx.font = 'bold 22px -apple-system, PingFang SC, sans-serif';
+  ctx.fillText('竞迹', 20, 42);
+  ctx.fillStyle = '#7778a0';
+  ctx.font = '13px -apple-system, PingFang SC, sans-serif';
+  const meta = `${org ? org + '  ' : ''}${race.distance}m  第${race.round}轮 第${race.group}组`;
+  ctx.fillText(meta, 20, 62);
+
+  // Results rows
+  sorted.forEach((l, i) => {
+    const y = 88 + i * 52;
+    if (i === 0) {
+      ctx.fillStyle = 'rgba(255,214,0,0.07)';
+      ctx.fillRect(0, y - 20, W, 50);
+    }
+    ctx.fillStyle = i === 0 ? '#ffd600' : '#eeeeff';
+    ctx.font = `${i === 0 ? 'bold' : ''} 15px -apple-system, PingFang SC, sans-serif`;
+    ctx.fillText(`${medals[i] || `#${i+1}`}  ${l.name}`, 20, y + 8);
+    ctx.fillStyle = i === 0 ? '#ffd600' : '#00e676';
+    ctx.font = 'bold 19px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(PrecisionTimer.formatFull(l.time), W - 20, y + 10);
+    ctx.textAlign = 'left';
+  });
+
+  // Footer
+  ctx.fillStyle = '#3a3a5c';
+  ctx.font = '11px -apple-system, PingFang SC, sans-serif';
+  ctx.fillText('竞迹 · 精准运动计时  jj.run', 20, H - 14);
+
+  const imgUrl = cv.toDataURL('image/png');
+
+  // QR text — compact results summary
+  const qrText = [
+    `竞迹成绩 ${race.distance}m`,
+    org ? `学校: ${org}` : '',
+    `第${race.round}轮 第${race.group}组`,
+    ...sorted.slice(0, 5).map((l, i) => `${medals[i]||`#${i+1}`} ${l.name} ${PrecisionTimer.formatFull(l.time)}`),
+  ].filter(Boolean).join('\n');
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrText)}`;
+
+  // Show modal
+  const ov = document.createElement('div');
+  ov.className = 'share-overlay';
+  ov.innerHTML = `
+    <div class="share-card">
+      <div class="share-title">📲 分享成绩</div>
+      <img class="share-img" src="${imgUrl}" alt="成绩卡">
+      <div class="share-hint">长按图片保存 · 或扫描二维码</div>
+      <img class="share-qr" src="${qrApiUrl}" alt="QR" crossorigin="anonymous">
+      <div class="share-qr-hint">扫码即可查看成绩</div>
+      <button class="btn btn-secondary share-close">关闭</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('.share-close').onclick = () => ov.remove();
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+}
+
+// ── Roster CSV import ──────────────────────────────────
+function handleRosterImport(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text  = e.target.result;
+    const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    const names = [];
+
+    lines.forEach(line => {
+      // Formats: "name", "lane,name", or comma-separated names on one line
+      const parts = line.split(',').map(p => p.trim()).filter(Boolean);
+      if (parts.length === 0) return;
+      if (parts.length === 1) {
+        names.push(parts[0]);
+      } else if (parts.length >= 2 && !isNaN(parts[0])) {
+        // First column is a lane number
+        const laneNum = parseInt(parts[0]) - 1;
+        if (laneNum >= 0 && laneNum < state.laneCount) {
+          const inp = $(`lane-input-${laneNum}`);
+          if (inp) { inp.value = parts[1]; inp.dispatchEvent(new Event('input')); }
+        }
+      } else {
+        names.push(...parts);
+      }
+    });
+
+    // Fill in order if no lane numbers
+    if (names.length) {
+      names.slice(0, state.laneCount).forEach((name, i) => {
+        const inp = $(`lane-input-${i}`);
+        if (inp) { inp.value = name; inp.dispatchEvent(new Event('input')); }
+      });
+    }
+
+    showToast(`✅ 已导入 ${Math.min(names.length || state.laneCount, state.laneCount)} 名运动员`, 'success');
+    debouncedBroadcastConfig();
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 // ── Finish device conn status ──────────────────────────
@@ -2001,6 +2152,14 @@ function attachEventListeners() {
   });
   if (groupPlus) groupPlus.addEventListener('click', () => {
     state.currentGroup++; $('group-display').textContent = state.currentGroup;
+  });
+
+  // Roster CSV import
+  const rosterFileInput = $('roster-file-input');
+  $('btn-roster-import')?.addEventListener('click', () => rosterFileInput?.click());
+  rosterFileInput?.addEventListener('change', e => {
+    handleRosterImport(e.target.files[0]);
+    e.target.value = '';  // allow re-import of same file
   });
 
   // Start mode
