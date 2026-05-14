@@ -1587,9 +1587,10 @@ input[type="text"]:focus { border-color: var(--accent); }
   width: 100%;
   flex-wrap: wrap;
 }
-.lane-sync-row[data-state="mismatch"] {
-  background: rgba(255,160,0,0.10);
-  border-color: rgba(255,160,0,0.35);
+.lane-sync-row[data-state="mismatch"],
+.lane-sync-row[data-state="manual"] {
+  background: rgba(100,150,255,0.08);
+  border-color: rgba(100,150,255,0.30);
 }
 .lane-sync-row[data-state="ok"] {
   background: rgba(0,200,83,0.10);
@@ -1598,6 +1599,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .lane-sync-icon { font-size: 14px; flex-shrink: 0; }
 .lane-sync-text { flex: 1; color: var(--text-muted); font-weight: 600; min-width: 0; }
 .lane-sync-row[data-state="mismatch"] .lane-sync-text { color: #faad14; }
+.lane-sync-row[data-state="manual"] .lane-sync-text { color: #7cb3ff; }
 .lane-sync-row[data-state="ok"] .lane-sync-text { color: var(--green); }
 .btn-lane-sync-adopt {
   background: rgba(255,98,0,0.85);

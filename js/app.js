@@ -514,22 +514,24 @@ function registerSyncEvents() {
     if (e.distance)    state.distance    = e.distance;
     if (e.trackLength) state.trackLength = e.trackLength;
 
-    // ── 终点端是道次的权威：自动识别结果不被发令端覆盖 ──────
-    // Only update lane count from start device if finish device has NOT auto-detected.
-    // If finish device already has its own detected count, keep it.
-    if (!state.autoDetectedLanes) {
-      // No local auto-detect yet — accept start device's count
-      if (Array.isArray(e.roster) && e.roster.length) {
-        state.laneCount = e.roster.length;
-      } else if (e.laneCount && e.laneCount !== state.laneCount) {
-        state.laneCount = e.laneCount;
-      }
-    }
-    // Always accept athlete roster names (just not the lane count if auto-detected)
+    // ── 道次：发令端的最终设置优先（操作员的决定）──────────
+    // The operator on the start device makes the final call on lane count.
+    // Auto-detect is a suggestion that gets adopted, but manual changes override it.
+    // Show a toast if the incoming count differs from what we auto-detected.
     if (Array.isArray(e.roster) && e.roster.length) {
+      const incomingCount = e.roster.length;
+      if (state.autoDetectedLanes && incomingCount !== state.autoDetectedLanes) {
+        showToast(`⚙️ 发令端设置 ${incomingCount} 道（摄像头识别 ${state.autoDetectedLanes} 道）`, 'info');
+      }
+      state.laneCount = incomingCount;
       state.lanes = e.roster.map(r => ({
         id: r.id, name: r.name, time: null, rank: null, dnf: false, lapTimes: [], currentLap: 0,
       }));
+    } else if (e.laneCount && e.laneCount !== state.laneCount) {
+      if (state.autoDetectedLanes && e.laneCount !== state.autoDetectedLanes) {
+        showToast(`⚙️ 发令端设置 ${e.laneCount} 道（摄像头识别 ${state.autoDetectedLanes} 道）`, 'info');
+      }
+      state.laneCount = e.laneCount;
     }
 
     // Re-init detector with current lane count (only when not mid-race)
@@ -1282,8 +1284,15 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    const graceMs    = minRaceGraceMs(state.distance);
+    // Grace period = time to FIRST crossing (per-lap distance), not total race distance.
+    // For multi-lap (e.g. 400m in 2 laps on 200m track), first crossing is at ~half-time.
+    const perLapDist = state.lapCount > 1
+      ? (state.trackLength || Math.round(state.distance / state.lapCount))
+      : state.distance;
+    const graceMs    = Math.round(minRaceGraceMs(perLapDist) * 0.75);
     const graceUntil = performance.now() + graceMs;
+    // For multi-lap: use longer cooldown to prevent double-counting same lap crossing
+    detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
     DOM.timerSub.textContent = '📷 保护期 ' + Math.ceil(graceMs / 1000) + 's...';
     detector.start(
       (laneIdx) => {
@@ -1561,8 +1570,15 @@ function onFinishDeviceRaceStart(event) {
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
   detector.onCloseFinish = null;
-  const fsGraceMs    = minRaceGraceMs(state.distance);
+  // Grace period = time to FIRST crossing (per-lap distance).
+  // For multi-lap on a short track, first crossing is after 1 lap, not the full race.
+  const fsPerLapDist = state.lapCount > 1
+    ? (state.trackLength || Math.round(state.distance / state.lapCount))
+    : state.distance;
+  const fsGraceMs    = Math.round(minRaceGraceMs(fsPerLapDist) * 0.75);
   const fsGraceUntil = performance.now() + fsGraceMs;
+  // Multi-lap: use 3s cooldown to prevent same crossing being counted twice
+  detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
   detector.start(
     (laneIdx, perfTs) => {
       if (performance.now() < fsGraceUntil) return;
@@ -2473,19 +2489,23 @@ function updateLaneSyncStatus() {
   }
 
   row.classList.remove('hidden');
-  const fd = state.finishDeviceLanes;
-  const sd = state.laneCount;
+  const fd = state.finishDeviceLanes;  // finish device auto-detected
+  const sd = state.laneCount;          // start device current setting
 
   if (fd === sd) {
+    // In sync — current setting matches finish device detection
     icon.textContent  = '✅';
-    text.textContent  = `终点端已同步（${fd} 道）`;
+    text.textContent  = `已同步：${sd} 道（摄像头识别）`;
     row.dataset.state = 'ok';
     if (adopt) adopt.classList.add('hidden');
   } else {
-    icon.textContent  = '⚠️';
-    text.textContent  = `发令端 ${sd} 道 ≠ 终点端 ${fd} 道`;
-    row.dataset.state = 'mismatch';
-    if (adopt) { adopt.textContent = `采用终点端 ${fd} 道`; adopt.classList.remove('hidden'); }
+    // Manual override — user has changed from the auto-detected value
+    // This is intentional! Start device's setting will be used at race time.
+    icon.textContent  = '⚙️';
+    text.textContent  = `手动 ${sd} 道（摄像头识别 ${fd} 道）`;
+    row.dataset.state = 'manual';
+    // Offer to revert to auto-detect result
+    if (adopt) { adopt.textContent = `恢复识别 ${fd} 道`; adopt.classList.remove('hidden'); }
   }
 }
 

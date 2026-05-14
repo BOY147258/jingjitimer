@@ -27,6 +27,8 @@ export class FinishLineDetector {
     this._laneDone     = new Set();
     // Optional per-lane finish time strings for overlay display
     this._laneFinishLabel = {};
+    // Cooldown between crossings per lane (ms). Increase for multi-lap to prevent double-count.
+    this.cooldownMs    = 1500;
   }
 
   // Permanently lock a lane after its athlete crosses. Pass optional display label (e.g. "13.24").
@@ -191,10 +193,11 @@ export class FinishLineDetector {
 
       this._cooldowns[laneIdx] = true;
       this.onCrossing?.(laneIdx, ts);
-      // Reset cooldown after 1.5 s — but only if the lane isn't permanently locked
+      // Reset cooldown after cooldownMs — but only if the lane isn't permanently locked
+      // cooldownMs is set higher (3000ms) for multi-lap races to prevent double-counting
       setTimeout(() => {
         if (!this._laneDone.has(laneIdx)) this._cooldowns[laneIdx] = false;
-      }, 1500);
+      }, this.cooldownMs);
     });
   }
 

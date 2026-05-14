@@ -1,5 +1,5 @@
-// v23 — admin back button (mobile topbar + sidebar) + admin-link label update
-const CACHE = 'jingjitimer-v23';
+// v24 — multi-lap grace period fix + cooldown fix + lane count authority fix
+const CACHE = 'jingjitimer-v24';
 
 const APP_SHELL = [
   './',
