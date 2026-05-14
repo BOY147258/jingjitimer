@@ -165,7 +165,6 @@ const DOM = {
   fsStateLabel:     $('fs-state-label'),
   fsRecDot:         $('fs-rec-dot'),
   fsResults:        $('fs-results'),
-  btnFsManual:      $('btn-fs-manual'),
   fsEnd:            $('fs-end'),
   fsEndList:        $('fs-end-list'),
   btnFsNextGroup:   $('btn-fs-next-group'),
@@ -1218,14 +1217,12 @@ function showRaceEndActions(race, blob) {
       <button class="btn btn-start rend-btn-next" id="btn-next-group">▶ 下一组</button>
       <button class="btn btn-secondary rend-btn-round" id="btn-next-round">▲ 下一轮</button>
     </div>
-    <button class="btn btn-ghost rend-btn-full" id="btn-share-results" style="margin-top:8px;width:100%">📲 分享成绩</button>
-    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:6px;width:100%">查看完整成绩</button>`;
+    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:8px;width:100%">查看完整成绩</button>`;
 
   DOM.lanesWrap.insertAdjacentElement('beforebegin', card);
 
   $('btn-next-group').onclick    = () => { card.remove(); nextGroup(false); };
   $('btn-next-round').onclick    = () => { card.remove(); nextGroup(true); };
-  $('btn-share-results').onclick = () => showShareCard(race);
   $('btn-see-results').onclick   = () => { renderResults(race, blob); showTab('results'); };
 
   // Play victory sound for winner
@@ -1379,8 +1376,6 @@ function onFinishDeviceRaceStart(event) {
     DOM.fsRecDot?.classList.remove('hidden');
   }
 
-  // Enable manual backup button
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = false;
 
   // Re-start detector with full crossing callbacks (same video/canvas, already inited)
   detector.stop();
@@ -1518,7 +1513,6 @@ async function onFinishDeviceRaceEnd() {
   detector.stop();
 
   DOM.fsRecDot?.classList.add('hidden');
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = true;
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '✅ 比赛结束';
 
   let blob = null;
@@ -1563,7 +1557,6 @@ function resetFinishDevice() {
   if (DOM.fsResults) DOM.fsResults.innerHTML = '';
   if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '等待发令信号...';
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = true;
 
   // Resume preview detection
   detector.stop();
@@ -1692,88 +1685,6 @@ function updateLatencyBadge() {
   if (rtt === null || rtt === undefined) { badge.textContent = ''; return; }
   badge.textContent = `${rtt}ms`;
   badge.className = 'latency-badge ' + (rtt < 30 ? 'lat-good' : rtt < 80 ? 'lat-ok' : 'lat-bad');
-}
-
-// ── Results share card (canvas image + QR) ────────────
-function showShareCard(race) {
-  const sorted = race.lanes.filter(l => l.time != null).sort((a,b) => a.time - b.time);
-  const org    = DOM.orgName?.value?.trim() || '';
-  const medals = ['🥇','🥈','🥉'];
-
-  // Build canvas results image
-  const W = 480, H = 80 + 52 * (sorted.length + 1) + 60;
-  const cv  = document.createElement('canvas');
-  cv.width  = W * 2; cv.height = H * 2;  // 2x for retina
-  const ctx = cv.getContext('2d');
-  ctx.scale(2, 2);
-
-  // Background
-  ctx.fillStyle = '#080810';
-  ctx.fillRect(0, 0, W, H);
-
-  // Brand bar
-  const grad = ctx.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0, '#ff6200'); grad.addColorStop(1, '#ff9f45');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, 6);
-
-  // Title
-  ctx.fillStyle = '#ff6200';
-  ctx.font = 'bold 22px -apple-system, PingFang SC, sans-serif';
-  ctx.fillText('竞迹', 20, 42);
-  ctx.fillStyle = '#7778a0';
-  ctx.font = '13px -apple-system, PingFang SC, sans-serif';
-  const meta = `${org ? org + '  ' : ''}${race.distance}m  第${race.round}轮 第${race.group}组`;
-  ctx.fillText(meta, 20, 62);
-
-  // Results rows
-  sorted.forEach((l, i) => {
-    const y = 88 + i * 52;
-    if (i === 0) {
-      ctx.fillStyle = 'rgba(255,214,0,0.07)';
-      ctx.fillRect(0, y - 20, W, 50);
-    }
-    ctx.fillStyle = i === 0 ? '#ffd600' : '#eeeeff';
-    ctx.font = `${i === 0 ? 'bold' : ''} 15px -apple-system, PingFang SC, sans-serif`;
-    ctx.fillText(`${medals[i] || `#${i+1}`}  ${l.name}`, 20, y + 8);
-    ctx.fillStyle = i === 0 ? '#ffd600' : '#00e676';
-    ctx.font = 'bold 19px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(PrecisionTimer.formatFull(l.time), W - 20, y + 10);
-    ctx.textAlign = 'left';
-  });
-
-  // Footer
-  ctx.fillStyle = '#3a3a5c';
-  ctx.font = '11px -apple-system, PingFang SC, sans-serif';
-  ctx.fillText('竞迹 · 精准运动计时  jj.run', 20, H - 14);
-
-  const imgUrl = cv.toDataURL('image/png');
-
-  // QR text — compact results summary
-  const qrText = [
-    `竞迹成绩 ${race.distance}m`,
-    org ? `学校: ${org}` : '',
-    `第${race.round}轮 第${race.group}组`,
-    ...sorted.slice(0, 5).map((l, i) => `${medals[i]||`#${i+1}`} ${l.name} ${PrecisionTimer.formatFull(l.time)}`),
-  ].filter(Boolean).join('\n');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrText)}`;
-
-  // Show modal
-  const ov = document.createElement('div');
-  ov.className = 'share-overlay';
-  ov.innerHTML = `
-    <div class="share-card">
-      <div class="share-title">📲 分享成绩</div>
-      <img class="share-img" src="${imgUrl}" alt="成绩卡">
-      <div class="share-hint">长按图片保存 · 或扫描二维码</div>
-      <img class="share-qr" src="${qrApiUrl}" alt="QR" crossorigin="anonymous">
-      <div class="share-qr-hint">扫码即可查看成绩</div>
-      <button class="btn btn-secondary share-close">关闭</button>
-    </div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('.share-close').onclick = () => ov.remove();
-  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
 
 // ── Roster CSV import ──────────────────────────────────
@@ -2178,17 +2089,6 @@ function attachEventListeners() {
   // Close-finish arbitration buttons
   $('cf-confirm')?.addEventListener('click', () => hideCloseFinish());
   $('cf-swap')?.addEventListener('click',    () => swapCloseFinish());
-
-  // Manual crossing (backup) — pick the unfinished lane with fewest crossings
-  DOM.btnFsManual?.addEventListener('click', () => {
-    let targetLane = 0;
-    let minCross   = Infinity;
-    for (let i = 0; i < state.laneCount; i++) {
-      const c = state.laneCrossings[i] ?? 0;
-      if (c < state.lapCount && c < minCross) { minCross = c; targetLane = i; }
-    }
-    handleFinishCrossing(targetLane, performance.now());
-  });
 
   // Distance selector
   $('race-distance')?.addEventListener('change', function() {

@@ -184,6 +184,8 @@ html, body {
   gap: 12px;
   min-height: 0;
 }
+/* Children must not shrink so the parent scrollbar activates */
+.tab-pane > * { flex-shrink: 0; }
 .tab-pane.hidden { display: none; }
 
 /* Race tab: camera+timer+controls fixed, lanes scroll */
@@ -1432,22 +1434,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .fsr-name { font-size: 11px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fsr-time { font-size: 13px; font-family: monospace; color: var(--green); font-weight: 700; }
 
-/* Manual backup button (bottom-left) */
-.fs-manual-btn {
-  position: absolute;
-  bottom: calc(env(safe-area-inset-bottom, 12px) + 12px);
-  left: 14px;
-  z-index: 20;
-  background: rgba(0,0,0,0.55);
-  border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 20px;
-  color: rgba(255,255,255,0.7);
-  font-size: 11px;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.fs-manual-btn:disabled { opacity: 0.3; pointer-events: none; }
-
 /* End-of-race overlay */
 .fs-end {
   position: absolute;
@@ -1717,38 +1703,6 @@ input[type="text"]:focus { border-color: var(--accent); }
   font-size: 11px; color: var(--text-muted);
   margin-top: 8px; text-align: center;
 }
-
-/* ── Results share overlay ──────────────────────────── */
-.share-overlay {
-  position: fixed; inset: 0;
-  background: rgba(8,8,16,0.92);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9500; padding: 20px;
-  overflow-y: auto;
-}
-.share-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 16px;
-  width: 100%; max-width: 360px;
-  text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-}
-.share-title { font-size: 16px; font-weight: 800; }
-.share-img {
-  width: 100%; border-radius: 10px;
-  border: 1px solid var(--border);
-  touch-action: manipulation;
-}
-.share-hint { font-size: 12px; color: var(--text-muted); }
-.share-qr {
-  width: 120px; height: 120px;
-  border-radius: 8px;
-  background: #fff; padding: 4px;
-}
-.share-qr-hint { font-size: 11px; color: var(--text-muted); margin-top: -6px; }
-.share-close { width: 100%; margin-top: 4px; }
 
 /* ── Observer (成绩端) ─────────────────────────────── */
 .obs-main {
