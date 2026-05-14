@@ -40,6 +40,8 @@ const state = {
   lanesDone:           0,
   // lane sync between start ↔ finish device
   finishDeviceLanes: null,  // lane count last reported by finish device (null = not yet known)
+  // finish device: auto-detected lane count is the authority — start device cannot override
+  autoDetectedLanes: null,  // set by finish device when auto-detect succeeds
   // observer device
   obsResults:   [],   // crossings this group
   obsHistory:   [],   // array of {round,group,results[]}
@@ -461,20 +463,29 @@ function registerSyncEvents() {
 
   sync.on('RACE_CONFIG', e => {
     if (state.role !== 'finish') return;
-    if (e.lapsNeeded)              state.lapCount    = e.lapsNeeded;
-    if (e.distance)                state.distance    = e.distance;
-    if (e.trackLength)             state.trackLength = e.trackLength;
-    const newCount = e.laneCount || (Array.isArray(e.roster) ? e.roster.length : state.laneCount);
+    if (e.lapsNeeded)  state.lapCount    = e.lapsNeeded;
+    if (e.distance)    state.distance    = e.distance;
+    if (e.trackLength) state.trackLength = e.trackLength;
+
+    // ── 终点端是道次的权威：自动识别结果不被发令端覆盖 ──────
+    // Only update lane count from start device if finish device has NOT auto-detected.
+    // If finish device already has its own detected count, keep it.
+    if (!state.autoDetectedLanes) {
+      // No local auto-detect yet — accept start device's count
+      if (Array.isArray(e.roster) && e.roster.length) {
+        state.laneCount = e.roster.length;
+      } else if (e.laneCount && e.laneCount !== state.laneCount) {
+        state.laneCount = e.laneCount;
+      }
+    }
+    // Always accept athlete roster names (just not the lane count if auto-detected)
     if (Array.isArray(e.roster) && e.roster.length) {
-      state.laneCount = e.roster.length;
       state.lanes = e.roster.map(r => ({
         id: r.id, name: r.name, time: null, rank: null, dnf: false, lapTimes: [], currentLap: 0,
       }));
-    } else if (newCount !== state.laneCount) {
-      state.laneCount = newCount;
     }
 
-    // Re-init detector with new lane count (only when not mid-race)
+    // Re-init detector with current lane count (only when not mid-race)
     if (!state.raceStarted && DOM.finishVideoFs?.srcObject) {
       detector.stop();
       detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
@@ -488,7 +499,8 @@ function registerSyncEvents() {
     // Show confirmed config in status label
     if (DOM.fsStateLabel && !state.raceStarted) {
       const lapStr = state.lapCount > 1 ? ` · ${state.lapCount}圈` : '';
-      DOM.fsStateLabel.textContent = `✅ ${state.laneCount}道 · ${state.distance}m${lapStr} 已就绪`;
+      const srcTag = state.autoDetectedLanes ? '📷' : '📡';
+      DOM.fsStateLabel.textContent = `✅ ${srcTag} ${state.laneCount}道 · ${state.distance}m${lapStr} 已就绪`;
       DOM.fsStateLabel.style.color = 'var(--green)';
       setTimeout(() => { if (DOM.fsStateLabel) DOM.fsStateLabel.style.color = ''; }, 1500);
     }
@@ -534,13 +546,17 @@ function registerSyncEvents() {
   sync.on('AUTO_DETECT_RESULT', e => {
     if (state.role !== 'start') return;
     if (e.lanes) {
+      const prev = state.laneCount;
       state.finishDeviceLanes = e.lanes;
+      // ── 自动采用终点端识别结果：终点端看得见跑道，是道次权威 ──
+      state.laneCount = e.lanes;
+      DOM.laneCountDisp.textContent = e.lanes;
+      buildLaneInputs(); saveSettings(); broadcastConfig();
       updateLaneSyncStatus();
-      // If they match, just confirm; if not, show mismatch UI (don't auto-overwrite)
-      if (e.lanes === state.laneCount) {
-        showToast(`✅ 终点端已同步：${e.lanes} 条跑道`, 'success');
+      if (prev !== e.lanes) {
+        showToast(`📷 终点端识别到 ${e.lanes} 道，已自动同步`, 'success');
       } else {
-        showToast(`⚠️ 终点端识别到 ${e.lanes} 道 vs 发令端 ${state.laneCount} 道，请核对`, 'warn');
+        showToast(`✅ 终点端已同步：${e.lanes} 条跑道`, 'success');
       }
     } else {
       showToast('终点端识别失败，请手动设置道次', 'warn');
@@ -735,7 +751,8 @@ function setupFinishCamera() {
     if (state.raceStarted) return;   // don't disturb an active race
     const result = detector.autoDetectLanes(8);
     if (result) {
-      state.laneCount = result.lanes;
+      state.laneCount         = result.lanes;
+      state.autoDetectedLanes = result.lanes;  // mark finish device as authoritative
       showToast(`📐 自动识别到 ${result.lanes} 条跑道`, 'success');
       updateLaneStatusBar();
       if (sync.connected) sync.send('AUTO_DETECT_RESULT', { lanes: result.lanes });
@@ -1673,13 +1690,15 @@ async function onFinishDeviceRaceEnd() {
 }
 
 function resetFinishDevice() {
-  state.raceStarted  = false;
-  state.raceFinished = false;
-  state.crossings    = [];
+  state.raceStarted   = false;
+  state.raceFinished  = false;
+  state.crossings     = [];
   state.laneCrossings = {};
   state.laneLastCrossingTime = {};
-  state.lanesDone = 0;
+  state.lanesDone     = 0;
   state.recordingStart = null;
+  // Keep autoDetectedLanes across groups — same track, same lane count
+  // (user can manually re-detect if track changes)
   recorder.clearBlob();
   if (mainStream && state.camGranted) recorder.initFromStream(mainStream);
 
@@ -2326,10 +2345,11 @@ function attachEventListeners() {
   const doAutoDetect = () => {
     const result = detector.autoDetectLanes(8);
     if (result) {
-      state.laneCount = result.lanes;
+      state.laneCount        = result.lanes;
+      state.autoDetectedLanes = result.lanes;  // mark as authoritative
       showToast(`📐 识别到 ${result.lanes} 条跑道`, 'success');
       updateLaneStatusBar();
-      // Sync updated lane count back to start device
+      // Sync to start device — start device will auto-adopt this count
       if (sync.connected) sync.send('AUTO_DETECT_RESULT', { lanes: result.lanes });
     } else {
       showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warn');

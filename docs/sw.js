@@ -1,5 +1,5 @@
-// v19 — lane sync status: mismatch warning + adopt button + race-start guard
-const CACHE = 'jingjitimer-v19';
+// v20 — finish device is lane-count authority; RACE_CONFIG cannot override auto-detected lanes
+const CACHE = 'jingjitimer-v20';
 
 const APP_SHELL = [
   './',
