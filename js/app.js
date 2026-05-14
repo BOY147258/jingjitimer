@@ -673,13 +673,24 @@ function setupFinishCamera() {
 
   const resizeCanvas = () => {
     const c = DOM.finishCanvasFs;
-    c.width  = window.innerWidth  * devicePixelRatio;
-    c.height = window.innerHeight * devicePixelRatio;
+    // Use the element's actual CSS pixel size — reliable in all orientations.
+    // Fall back to window dimensions only if layout hasn't run yet.
+    const w = c.offsetWidth  || window.innerWidth;
+    const h = c.offsetHeight || window.innerHeight;
+    if (w > 0 && h > 0) {
+      c.width  = Math.round(w * devicePixelRatio);
+      c.height = Math.round(h * devicePixelRatio);
+    }
     c.style.width  = '100%';
     c.style.height = '100%';
   };
   setTimeout(resizeCanvas, 200);
-  window.addEventListener('resize', resizeCanvas);
+  // orientationchange fires before layout updates; wait 350 ms for the new dimensions
+  window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 350));
+  window.addEventListener('resize', () => setTimeout(resizeCanvas, 50));
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(resizeCanvas).observe(DOM.finishCanvasFs);
+  }
 
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);

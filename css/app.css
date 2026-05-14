@@ -184,6 +184,8 @@ html, body {
   gap: 12px;
   min-height: 0;
 }
+/* Children must not shrink so the parent scrollbar activates */
+.tab-pane > * { flex-shrink: 0; }
 .tab-pane.hidden { display: none; }
 
 /* Race tab: camera+timer+controls fixed, lanes scroll */
@@ -720,7 +722,9 @@ input[type="text"]:focus { border-color: var(--accent); }
   gap: 8px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
+.lanes-wrap > * { flex-shrink: 0; }
 
 .lane-card {
   display: flex;
@@ -1357,6 +1361,21 @@ input[type="text"]:focus { border-color: var(--accent); }
   z-index: 20;
 }
 .fs-topbar > * { pointer-events: auto; }
+.fs-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fs-room-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.95);
+  background: rgba(255,98,0,0.35);
+  border: 1px solid rgba(255,98,0,0.6);
+  border-radius: 6px;
+  padding: 2px 8px;
+  letter-spacing: 1px;
+}
 
 .fs-conn-row {
   display: flex;
@@ -1432,58 +1451,58 @@ input[type="text"]:focus { border-color: var(--accent); }
 .fsr-name { font-size: 11px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fsr-time { font-size: 13px; font-family: monospace; color: var(--green); font-weight: 700; }
 
-/* Manual backup button (bottom-left) */
-.fs-manual-btn {
-  position: absolute;
-  bottom: calc(env(safe-area-inset-bottom, 12px) + 12px);
-  left: 14px;
-  z-index: 20;
-  background: rgba(0,0,0,0.55);
-  border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 20px;
-  color: rgba(255,255,255,0.7);
-  font-size: 11px;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.fs-manual-btn:disabled { opacity: 0.3; pointer-events: none; }
-
 /* End-of-race overlay */
 .fs-end {
   position: absolute;
   inset: 0;
-  background: rgba(8,8,16,0.94);
+  background: rgba(8,8,16,0.96);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 30;
+  overflow-y: auto;
+  padding: 20px 0 24px;
 }
 
 .fs-end-inner {
-  width: 88%;
-  max-width: 360px;
+  width: 92%;
+  max-width: 480px;
 }
 
 .fs-end-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   color: var(--green);
   letter-spacing: 1px;
 }
 
-.fs-end-list { margin-bottom: 20px; }
+.fs-end-list { margin-bottom: 16px; }
 
 .fs-end-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
 }
 .fs-end-row:last-child { border-bottom: none; }
-.fs-end-rank { font-size: 22px; width: 30px; text-align: center; }
+
+.fs-end-photo {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.fs-end-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+.fs-end-rank { font-size: 22px; width: 32px; text-align: center; flex-shrink: 0; }
 .fs-end-name { flex: 1; font-size: 14px; font-weight: 600; }
 .fs-end-time { font-family: monospace; font-size: 15px; color: var(--green); font-weight: 700; }
 
@@ -1503,6 +1522,9 @@ input[type="text"]:focus { border-color: var(--accent); }
   padding: 12px 20px calc(env(safe-area-inset-bottom, 16px) + 16px);
   z-index: 30;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.6);
+  max-height: 85dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .fs-panel-handle {
@@ -1717,38 +1739,6 @@ input[type="text"]:focus { border-color: var(--accent); }
   font-size: 11px; color: var(--text-muted);
   margin-top: 8px; text-align: center;
 }
-
-/* ── Results share overlay ──────────────────────────── */
-.share-overlay {
-  position: fixed; inset: 0;
-  background: rgba(8,8,16,0.92);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9500; padding: 20px;
-  overflow-y: auto;
-}
-.share-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 16px;
-  width: 100%; max-width: 360px;
-  text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-}
-.share-title { font-size: 16px; font-weight: 800; }
-.share-img {
-  width: 100%; border-radius: 10px;
-  border: 1px solid var(--border);
-  touch-action: manipulation;
-}
-.share-hint { font-size: 12px; color: var(--text-muted); }
-.share-qr {
-  width: 120px; height: 120px;
-  border-radius: 8px;
-  background: #fff; padding: 4px;
-}
-.share-qr-hint { font-size: 11px; color: var(--text-muted); margin-top: -6px; }
-.share-close { width: 100%; margin-top: 4px; }
 
 /* ── Observer (成绩端) ─────────────────────────────── */
 .obs-main {
