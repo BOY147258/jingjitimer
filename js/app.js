@@ -1404,6 +1404,31 @@ async function autoSaveToBackend(race) {
   }
 }
 
+function goHome() {
+  if (state.raceStarted && !state.raceFinished) {
+    if (!confirm('比赛进行中，确定返回主页？当前计时将丢失。')) return;
+  }
+  // Stop everything
+  timer.stop(); timer.reset();
+  detector.stop();
+  if (mainStream) { mainStream.getTracks().forEach(t => t.stop()); mainStream = null; }
+  sync.disconnect();
+  recorder.stop();
+
+  // Reset state
+  state.role = 'solo'; state.raceStarted = false; state.raceFinished = false;
+  state.lanes = []; state.camGranted = false; state.micGranted = false;
+  selectedRole = null;
+
+  // Hide all sections, show role overlay
+  document.getElementById('tab-bar-start')?.classList.add('hidden');
+  document.getElementById('tab-observer-main')?.classList.add('hidden');
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.fs-main, [id^="tab-finish"]').forEach(p => p.classList.add('hidden'));
+  DOM.roleOverlay.classList.remove('hidden');
+  DOM.appTitle.innerHTML = '<span class="brand-jj">竞迹</span>';
+}
+
 function resetRace() {
   state.raceStarted = false; state.raceFinished = false;
   state.lanes.forEach(l => { l.time = null; l.rank = null; l.dnf = false; l.lapTimes = []; l.currentLap = 0; });
@@ -2298,6 +2323,11 @@ function attachEventListeners() {
       _initRaceCanvas();
     }
   });
+
+  // Home / back buttons
+  $('btn-go-home')?.addEventListener('click', goHome);
+  $('btn-fs-home')?.addEventListener('click', goHome);
+  $('btn-obs-home')?.addEventListener('click', goHome);
 
   // Help / guide buttons
   const openGuide = () => $('guide-overlay')?.classList.remove('hidden');

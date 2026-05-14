@@ -1782,6 +1782,31 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 .obs-hist-item.gold { color: var(--yellow); font-weight: 700; }
 
+/* ── Tab bar home button ───────────────────────────── */
+.tab-btn-home {
+  font-size: 18px;
+  padding: 0 10px;
+  min-width: 40px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab-btn-home:hover, .tab-btn-home:active { color: var(--accent); background: var(--accent-dim); }
+
+/* ── Finish device home button ─────────────────────── */
+.fs-home-btn {
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: var(--text-muted);
+  border-radius: 8px;
+  width: 34px; height: 34px;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  margin-right: 4px;
+}
+.fs-home-btn:active { background: var(--accent-dim); color: var(--accent); }
+
 /* ── Help button in header ─────────────────────────── */
 .btn-help-header {
   background: none;

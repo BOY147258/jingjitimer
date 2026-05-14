@@ -130,6 +130,7 @@
 
   <!-- ── Tab Bar (start/solo) ─────────────────────────── -->
   <nav class="tab-bar" id="tab-bar-start">
+    <button class="tab-btn tab-btn-home" id="btn-go-home" title="返回主页">⌂</button>
     <button class="tab-btn active" data-tab="setup">⚙️ 设置</button>
     <button class="tab-btn" data-tab="race">🏁 比赛</button>
     <button class="tab-btn" data-tab="results">📊 成绩</button>
@@ -368,6 +369,7 @@
         <span id="fs-state-label" class="fs-state-label">等待连接...</span>
       </div>
       <div class="fs-rec-dot hidden" id="fs-rec-dot">● REC</div>
+      <button class="fs-home-btn" id="btn-fs-home" aria-label="返回主页">⌂</button>
       <button class="fs-gear-btn" id="btn-fs-settings" aria-label="设置">⚙</button>
     </div>
 
@@ -427,6 +429,7 @@
       <div class="obs-topbar-right">
         <span id="obs-room-badge" class="obs-room-badge"></span>
         <button id="btn-obs-export" class="btn btn-secondary btn-sm" disabled>📊 导出 Excel</button>
+        <button id="btn-obs-home" class="btn btn-ghost btn-sm" style="padding:0 10px">⌂</button>
       </div>
     </div>
 
@@ -520,6 +523,6 @@
 
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=14"></script>
+<script type="module" src="js/app.js?v=15"></script>
 </body>
 </html>

@@ -27,19 +27,27 @@ export class Sync {
     const offsets = [];
     const rtts    = [];
     for (let i = 0; i < attempts; i++) {
-      const t1 = performance.now();
-      const r  = await fetch('/ping');
-      const t4 = performance.now();
-      const { serverTime } = await r.json();
-      offsets.push(serverTime - (t1 + (t4 - t1) / 2));
-      rtts.push(t4 - t1);
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 40));
+      try {
+        const t1 = performance.now();
+        const r  = await fetch('/ping', { cache: 'no-store' });
+        const t4 = performance.now();
+        if (!r.ok) break;                        // no server — skip silently
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('json')) break;         // got HTML 404, not JSON
+        const { serverTime } = await r.json();
+        if (!serverTime) break;
+        offsets.push(serverTime - (t1 + (t4 - t1) / 2));
+        rtts.push(t4 - t1);
+        if (i < attempts - 1) await new Promise(r => setTimeout(r, 40));
+      } catch { break; }                         // network error — skip silently
     }
-    offsets.sort((a, b) => a - b);
-    this._offset = offsets[Math.floor(offsets.length / 2)];
-    // Expose median one-way latency estimate in ms
-    rtts.sort((a, b) => a - b);
-    this.rtt = Math.round(rtts[Math.floor(rtts.length / 2)] / 2);
+    if (offsets.length > 0) {
+      offsets.sort((a, b) => a - b);
+      this._offset = offsets[Math.floor(offsets.length / 2)];
+      rtts.sort((a, b) => a - b);
+      this.rtt = Math.round(rtts[Math.floor(rtts.length / 2)] / 2);
+    }
+    // If no server available, _offset stays 0 (use local clock)
   }
 
   // Server-synchronized "now" in ms (comparable across devices)
