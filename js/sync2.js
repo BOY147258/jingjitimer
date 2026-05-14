@@ -28,8 +28,11 @@ export class Sync {
     const rtts    = [];
     for (let i = 0; i < attempts; i++) {
       try {
-        const t1 = performance.now();
-        const r  = await fetch('/ping', { cache: 'no-store' });
+        const t1    = performance.now();
+        const pingUrl = this._serverHost
+          ? `https://${this._serverHost}/ping`
+          : '/ping';
+        const r  = await fetch(pingUrl, { cache: 'no-store' });
         const t4 = performance.now();
         if (!r.ok) break;                        // no server — skip silently
         const ct = r.headers.get('content-type') || '';
@@ -54,9 +57,11 @@ export class Sync {
   serverNow() { return performance.now() + this._offset; }
 
   // Join a room via WebSocket (initial connection)
-  async join(room, role) {
+  // serverHost: optional override, e.g. 'jingjitimer.onrender.com'
+  async join(room, role, serverHost) {
     this.room            = room;
     this.role            = role;
+    this._serverHost     = serverHost || null;
     this._autoReconnect  = true;
     this._reconnectCount = 0;
     await this.calibrate();
@@ -69,8 +74,9 @@ export class Sync {
       let settled = false;
       const settle = (fn, v) => { if (!settled) { settled = true; fn(v); } };
 
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url   = `${proto}//${location.host}/ws?room=${encodeURIComponent(this.room)}&role=${encodeURIComponent(this.role)}`;
+      const host  = this._serverHost || location.host;
+      const proto = (this._serverHost || location.protocol === 'https:') ? 'wss:' : 'ws:';
+      const url   = `${proto}//${host}/ws?room=${encodeURIComponent(this.room)}&role=${encodeURIComponent(this.role)}`;
       this._ws    = new WebSocket(url);
 
       this._ws.onmessage = e => {

@@ -88,6 +88,16 @@
             placeholder="与发令端相同" inputmode="numeric" pattern="[0-9]*">
         </div>
 
+        <!-- 服务器地址（高级，默认填好，不懂的不用改） -->
+        <details class="server-url-details">
+          <summary class="server-url-summary">服务器地址 ▸</summary>
+          <input type="text" id="server-url-input" class="room-code-input"
+            style="width:100%;margin-top:6px;font-size:12px"
+            placeholder="例：jingjitimer.onrender.com"
+            value="">
+          <div style="font-size:11px;color:#666;margin-top:4px">留空则使用当前网站地址</div>
+        </details>
+
         <div id="room-status" class="room-status">未连接</div>
         <button id="btn-connect" class="btn btn-primary btn-full mt-8">连接到比赛</button>
       </div>
@@ -534,6 +544,6 @@
 
 </div><!-- #app -->
 
-<script type="module" src="js/app.js?v=17"></script>
+<script type="module" src="js/app.js?v=18"></script>
 </body>
 </html>

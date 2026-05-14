@@ -335,8 +335,10 @@ async function connectToRoom() {
     state.roomCode = code;
   }
 
+  const serverHost = ($('server-url-input')?.value.trim()) || null;
+
   try {
-    await sync.join(state.roomCode, selectedRole);
+    await sync.join(state.roomCode, selectedRole, serverHost);
     state.clientId      = sync.clientId;
     state.peerConnected = sync.peerOnline;
     updateLatencyBadge();

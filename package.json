@@ -5,13 +5,13 @@
   "main": "serve.js",
   "type": "module",
   "scripts": {
-    "start": "node serve.js"
+    "start": "node ws-server.js",
+    "dev":   "node serve.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
-    "playwright": "^1.60.0",
     "ws": "^8.20.0"
   }
 }

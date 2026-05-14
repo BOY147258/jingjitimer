@@ -273,6 +273,17 @@ html, body {
 }
 .dist-select:focus { border-color: var(--accent); }
 
+/* ── Server URL collapsible (role panel) ────────────── */
+.server-url-details { margin-top: 10px; }
+.server-url-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.server-url-summary::-webkit-details-marker { display: none; }
+
 /* ── Advanced collapsible ───────────────────────────── */
 .advanced-details {
   background: var(--bg-card);
