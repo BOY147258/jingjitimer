@@ -1112,6 +1112,30 @@ function _initRaceCanvas() {
   detector.start(null, null); // preview mode: draws finish line, no crossing callbacks
 }
 
+// ── Minimum race time (grace period) per distance ─────────────────────────────
+// Based on near-world-record times: any crossing before this time after the gun
+// is a false trigger (athletes still at start, start-line = finish-line layout, etc.)
+// Values are intentionally slightly below world records to stay safe for all levels.
+function minRaceGraceMs(distanceM) {
+  const table = {
+     50:  5000,   // 5 s  (WR: 5.56 s)
+     60:  6000,   // 6 s  (WR: 6.34 s)
+     80:  7500,   // 7.5 s
+    100:  9500,   // 9.5 s (WR: 9.58 s)
+    150: 13500,   // 13.5 s
+    200: 18000,   // 18 s  (WR: 19.19 s — fixed! old formula gave 20 s)
+    300: 30000,   // 30 s
+    400: 43000,   // 43 s  (WR: 43.03 s — fixed! old formula gave 40 s)
+    800: 101000,  // 101 s (WR: 101.73 s)
+   1000: 131000,
+   1500: 205000,
+   3000: 450000,
+   5000: 780000,
+  };
+  // Fallback: 90 ms per metre (≈ 11.1 m/s average pace, well within human limits)
+  return table[distanceM] ?? Math.max(3000, distanceM * 90);
+}
+
 function beginRace() {
   if (state.raceStarted) return;
   state.raceStarted  = true;
@@ -1142,9 +1166,9 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    const graceMs    = Math.max(3000, state.distance * 100); // dynamic: 100m→10s, 200m→20s, 400m→40s
+    const graceMs    = minRaceGraceMs(state.distance);
     const graceUntil = performance.now() + graceMs;
-    DOM.timerSub.textContent = '📷 摄像头校准中...';
+    DOM.timerSub.textContent = '📷 保护期 ' + Math.ceil(graceMs / 1000) + 's...';
     detector.start(
       (laneIdx) => {
         if (performance.now() < graceUntil) return; // ignore motion during warmup / race-start false trigger
@@ -1152,7 +1176,8 @@ function beginRace() {
       },
       (level) => {
         if (performance.now() < graceUntil) {
-          DOM.timerSub.textContent = '📷 摄像头校准中...';
+          const secLeft = Math.ceil((graceUntil - performance.now()) / 1000);
+          DOM.timerSub.textContent = `📷 保护期 ${secLeft}s — 忽略误触发`;
           return;
         }
         const pct = Math.min(100, level * 100);
@@ -1415,7 +1440,7 @@ function onFinishDeviceRaceStart(event) {
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
   detector.onCloseFinish = null;
-  const fsGraceMs    = Math.max(3000, state.distance * 100); // dynamic grace: 100m→10s, 200m→20s, 400m→40s
+  const fsGraceMs    = minRaceGraceMs(state.distance);
   const fsGraceUntil = performance.now() + fsGraceMs;
   detector.start(
     (laneIdx, perfTs) => {
@@ -1426,9 +1451,12 @@ function onFinishDeviceRaceStart(event) {
       const pct = Math.min(100, level * 100);
       if (DOM.fsLevelFill) DOM.fsLevelFill.style.width = `${pct}%`;
       if (DOM.fsDetectStatus) {
-        DOM.fsDetectStatus.textContent = performance.now() < fsGraceUntil
-          ? '📷 校准中，请勿移动摄像头...'
-          : (level > 0.3 ? `🔴 检测到动作 (${Math.round(pct)}%)` : '🟢 等待冲线...');
+        if (performance.now() < fsGraceUntil) {
+          const secLeft = Math.ceil((fsGraceUntil - performance.now()) / 1000);
+          DOM.fsDetectStatus.textContent = `📷 保护期 ${secLeft}s — 忽略误触发`;
+        } else {
+          DOM.fsDetectStatus.textContent = level > 0.3 ? `🔴 检测到动作 (${Math.round(pct)}%)` : '🟢 等待冲线...';
+        }
       }
     }
   );

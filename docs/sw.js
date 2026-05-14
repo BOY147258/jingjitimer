@@ -1,5 +1,5 @@
-// v16 — force cache bust: orientation fix + auto-detect lanes
-const CACHE = 'jingjitimer-v16';
+// v17 — grace period lookup table + countdown display
+const CACHE = 'jingjitimer-v17';
 
 const APP_SHELL = [
   './',
