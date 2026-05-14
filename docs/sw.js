@@ -1,5 +1,5 @@
-// v14 — network-first for app shell, cache fallback for offline
-const CACHE = 'jingjitimer-v14';
+// v15 — network-first for app shell, cache fallback for offline
+const CACHE = 'jingjitimer-v15';
 
 const APP_SHELL = [
   './',
