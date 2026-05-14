@@ -1,5 +1,5 @@
-// v17 — grace period lookup table + countdown display
-const CACHE = 'jingjitimer-v17';
+// v18 — lane auto-detect on start device + finish device floating button
+const CACHE = 'jingjitimer-v18';
 
 const APP_SHELL = [
   './',

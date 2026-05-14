@@ -165,6 +165,7 @@
             <span id="lane-count-display">4</span>
             <button class="step-btn" id="btn-lane-plus">+</button>
           </div>
+          <button class="btn-lane-auto" id="btn-auto-detect-lanes">🔍 自动识别</button>
         </div>
         <div class="core-divider"></div>
         <div class="core-field">
@@ -395,6 +396,11 @@
         <button class="fs-home-btn" id="btn-fs-home" aria-label="返回主页">⌂</button>
         <button class="fs-gear-btn" id="btn-fs-settings" aria-label="设置">⚙</button>
       </div>
+    </div>
+
+    <!-- Auto-detect lanes floating button (visible when camera ready, hidden during race) -->
+    <div class="fs-auto-pill hidden" id="fs-auto-pill">
+      <button class="fs-auto-pill-btn" id="btn-fs-auto-lanes-main">🔍 自动识别道次</button>
     </div>
 
     <!-- Right-side result cards (slide in as athletes cross) -->

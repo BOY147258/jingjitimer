@@ -1558,6 +1558,50 @@ input[type="text"]:focus { border-color: var(--accent); }
   display: block;
 }
 
+/* ── 发令端设置页 — 道次自动识别按钮 ─────────────────── */
+.btn-lane-auto {
+  background: rgba(255,98,0,0.12);
+  border: 1px solid rgba(255,98,0,0.35);
+  border-radius: 20px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: background var(--transition), transform var(--transition);
+  white-space: nowrap;
+}
+.btn-lane-auto:active { background: rgba(255,98,0,0.25); transform: scale(0.96); }
+
+/* ── 终点端主界面 — 浮动自动识别按钮 ─────────────────── */
+.fs-auto-pill {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: auto;
+  transition: opacity 0.3s;
+}
+.fs-auto-pill.hidden { opacity: 0; pointer-events: none; }
+.fs-auto-pill-btn {
+  background: rgba(255,98,0,0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: none;
+  border-radius: 22px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  letter-spacing: 0.5px;
+  transition: transform 0.15s, background 0.15s;
+}
+.fs-auto-pill-btn:active { transform: scale(0.94); background: rgba(255,98,0,1); }
+
 /* Settings slide-up panel */
 .fs-settings-panel {
   position: absolute;

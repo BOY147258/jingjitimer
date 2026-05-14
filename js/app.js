@@ -512,6 +512,33 @@ function registerSyncEvents() {
   sync.on('RACE_END', () => {
     if (state.role === 'finish') onFinishDeviceRaceEnd();
   });
+  // ── 自动识别道次：终点端执行 → 发令端接收结果 ──────────
+  sync.on('AUTO_DETECT_REQUEST', () => {
+    if (state.role !== 'finish') return;
+    const result = detector.autoDetectLanes(8);
+    if (result) {
+      state.laneCount = result.lanes;
+      showToast(`📐 识别到 ${result.lanes} 条跑道`, 'success');
+      updateLaneStatusBar();
+      sync.send('AUTO_DETECT_RESULT', { lanes: result.lanes });
+    } else {
+      showToast('自动识别失败，请确保跑道清晰可见', 'warn');
+      sync.send('AUTO_DETECT_RESULT', { lanes: null });
+    }
+  });
+
+  sync.on('AUTO_DETECT_RESULT', e => {
+    if (state.role !== 'start') return;
+    if (e.lanes) {
+      state.laneCount = e.lanes;
+      DOM.laneCountDisp.textContent = e.lanes;
+      buildLaneInputs(); saveSettings();
+      showToast(`📐 终点端识别到 ${e.lanes} 条跑道`, 'success');
+    } else {
+      showToast('终点端识别失败，请手动设置道次', 'warn');
+    }
+  });
+
   sync.on('RACE_ABORT', () => {
     if (state.role === 'finish') {
       // Reset finish device back to waiting state
@@ -703,7 +730,11 @@ function setupFinishCamera() {
       state.laneCount = result.lanes;
       showToast(`📐 自动识别到 ${result.lanes} 条跑道`, 'success');
       updateLaneStatusBar();
+      if (sync.connected) sync.send('AUTO_DETECT_RESULT', { lanes: result.lanes });
     }
+    // Show floating auto-detect button once camera is ready
+    const pill = $('fs-auto-pill');
+    if (pill) pill.classList.remove('hidden');
   };
   // First attempt after metadata loads (gives video dimensions)
   DOM.finishVideoFs.addEventListener('loadedmetadata', () => setTimeout(tryAutoDetect, 800), { once: true });
@@ -1422,9 +1453,11 @@ function onFinishDeviceRaceStart(event) {
   detector.resetLaneDone();          // clear per-lane locks from previous race
   updateLaneStatusBar();             // reset status bar to all-waiting
 
-  // Hide end overlay immediately if still visible from previous group
+  // Hide end overlay and auto-detect button during race
   if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
   if (DOM.fsResults) DOM.fsResults.innerHTML = '';
+  const pill = $('fs-auto-pill');
+  if (pill) pill.classList.add('hidden');
 
   beep(660, 200);
 
@@ -1578,6 +1611,10 @@ async function onFinishDeviceRaceEnd() {
   if (state.raceFinished) return;
   state.raceFinished = true;
   detector.stop();
+
+  // Restore auto-detect button after race ends
+  const pill = $('fs-auto-pill');
+  if (pill) pill.classList.remove('hidden');
 
   DOM.fsRecDot?.classList.add('hidden');
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '✅ 比赛结束';
@@ -2084,6 +2121,28 @@ function attachEventListeners() {
     }
   });
 
+  // ── 发令端"自动识别道次"按钮 ──────────────────────────
+  $('btn-auto-detect-lanes')?.addEventListener('click', () => {
+    if (state.role === 'solo' && detector) {
+      // Solo: camera already open on race canvas — run detection directly
+      const result = detector.autoDetectLanes(8);
+      if (result) {
+        state.laneCount = result.lanes;
+        DOM.laneCountDisp.textContent = state.laneCount;
+        buildLaneInputs(); saveSettings();
+        showToast(`📐 识别到 ${result.lanes} 条跑道`, 'success');
+      } else {
+        showToast('识别失败，请确保终点摄像头已开启且跑道白线清晰可见', 'warn');
+      }
+    } else if (state.role === 'start' && sync.connected) {
+      // Start device: ask finish device to auto-detect and report back
+      sync.send('AUTO_DETECT_REQUEST', {});
+      showToast('📡 已发送识别请求，等待终点端响应...', 'info');
+    } else {
+      showToast('请先连接终点设备', 'warn');
+    }
+  });
+
   // Lap count
   const lapMinus = $('btn-lap-minus');
   const lapPlus  = $('btn-lap-plus');
@@ -2230,17 +2289,21 @@ function attachEventListeners() {
     if (e.target.id === 'guide-overlay') closeGuide();
   });
 
-  // Auto-detect lanes from current video frame (manual button)
-  $('btn-fs-auto-lanes')?.addEventListener('click', () => {
+  // Auto-detect lanes — shared handler for both settings-panel btn and main floating btn
+  const doAutoDetect = () => {
     const result = detector.autoDetectLanes(8);
     if (result) {
       state.laneCount = result.lanes;
-      showToast(`自动识别到 ${result.lanes} 条道次`, 'success');
+      showToast(`📐 识别到 ${result.lanes} 条跑道`, 'success');
       updateLaneStatusBar();
+      // Sync updated lane count back to start device
+      if (sync.connected) sync.send('AUTO_DETECT_RESULT', { lanes: result.lanes });
     } else {
-      showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warning');
+      showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warn');
     }
-  });
+  };
+  $('btn-fs-auto-lanes')?.addEventListener('click', doAutoDetect);
+  $('btn-fs-auto-lanes-main')?.addEventListener('click', doAutoDetect);
 
   // Reset lane dividers to equal spacing
   const resetLaneDividers = () => {
