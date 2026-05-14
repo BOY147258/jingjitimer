@@ -1,5 +1,5 @@
-// v15 — network-first for app shell, cache fallback for offline
-const CACHE = 'jingjitimer-v15';
+// v16 — force cache bust: orientation fix + auto-detect lanes
+const CACHE = 'jingjitimer-v16';
 
 const APP_SHELL = [
   './',

@@ -80,20 +80,48 @@ export class FinishLineDetector {
     requestAnimationFrame(() => this._loop());
   }
 
+  // Returns true when the raw video pixels are rotated 90° relative to the display.
+  // Happens on iOS: camera always delivers portrait pixels even when phone is landscape.
+  _isAxesSwapped() {
+    const vw = this._video?.videoWidth  || 0;
+    const vh = this._video?.videoHeight || 0;
+    const dw = this._dispCanvas?.offsetWidth  || 0;
+    const dh = this._dispCanvas?.offsetHeight || 0;
+    if (!vw || !vh || !dw || !dh) return false;
+    return (vw < vh) !== (dw < dh);   // one is portrait, the other landscape
+  }
+
   _analyze() {
     if (!this._video || this._video.readyState < 2) return;
-    const W = this._W, H = this._H;  // W = 4 (vertical line scan)
+    const W = this._W, H = this._H;
 
-    // Use display canvas dimensions as reliable proxy for video frame dimensions
-    const vw   = this._video.videoWidth  || this._dispCanvas?.offsetWidth  || 640;
-    const vh   = this._video.videoHeight || this._dispCanvas?.offsetHeight || 480;
-    const srcX = Math.max(0, Math.round(this._linePos * vw) - W / 2);
-    const srcW = Math.min(W, vw - srcX);
-    // Source-crop to finish line strip only
-    if (srcW > 0) {
-      this._ctx.drawImage(this._video, srcX, 0, srcW, vh, 0, 0, W, H);
+    const vw = this._video.videoWidth  || 640;
+    const vh = this._video.videoHeight || 480;
+
+    // When the camera delivers portrait pixels but the display is landscape (common on iOS),
+    // the finish-line axis in raw pixels is Y (not X), and the lane axis is X (not Y).
+    const swapped = this._isAxesSwapped();
+
+    if (!swapped) {
+      // ── Normal (landscape raw video) ─────────────────
+      // Take a thin vertical strip at the finish-line X position.
+      const srcX = Math.max(0, Math.round(this._linePos * vw) - W / 2);
+      const srcW = Math.min(W, vw - srcX);
+      this._ctx.drawImage(this._video, srcX, 0, Math.max(1, srcW), vh, 0, 0, W, H);
     } else {
-      this._ctx.drawImage(this._video, 0, 0, W, H);
+      // ── Portrait raw video in landscape display ───────
+      // Finish-line position maps to a Y position in raw pixels.
+      // Lane axis = X axis of raw video → map to analysis canvas Y axis.
+      const srcY = Math.max(0, Math.round(this._linePos * vh) - W / 2);
+      const srcH = Math.min(W, vh - srcY);
+      // Draw the horizontal strip rotated 90° so raw-X becomes canvas-Y.
+      this._ctx.save();
+      this._ctx.translate(W, 0);
+      this._ctx.rotate(Math.PI / 2);
+      // After rotation: canvas X→Y, canvas Y→-X+W
+      // drawImage dest (0,0,H,W) in rotated space fills the W×H analysis canvas.
+      this._ctx.drawImage(this._video, 0, srcY, vw, Math.max(1, srcH), 0, 0, H, W);
+      this._ctx.restore();
     }
 
     const slice = this._ctx.getImageData(0, 0, W, H);
@@ -178,10 +206,27 @@ export class FinishLineDetector {
 
   _drawOverlay() {
     if (!this._dispCanvas) return;
+
+    // ── Sync canvas buffer to current CSS layout size every frame ──
+    // This is the only reliable way to handle orientation changes on all devices.
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = this._dispCanvas.offsetWidth;
+    const cssH = this._dispCanvas.offsetHeight;
+    if (cssW > 0 && cssH > 0) {
+      const needW = Math.round(cssW * dpr);
+      const needH = Math.round(cssH * dpr);
+      if (this._dispCanvas.width !== needW || this._dispCanvas.height !== needH) {
+        this._dispCanvas.width  = needW;
+        this._dispCanvas.height = needH;
+        this._prevSlice = null;   // reset motion diff after resize
+      }
+    } else {
+      return;  // canvas not laid out yet (hidden parent)
+    }
+
     const dW  = this._dispCanvas.width;
     const dH  = this._dispCanvas.height;
     const ctx = this._dispCtx;
-    const dpr = window.devicePixelRatio || 1;
 
     ctx.clearRect(0, 0, dW, dH);
 
@@ -373,8 +418,7 @@ export class FinishLineDetector {
   }
 
   // Auto-detect lane count and divider positions from a full video frame.
-  // Scans row brightness across the entire frame to find bright white lane lines
-  // painted on the track, then updates _laneCount and _laneDividers.
+  // Works with both landscape raw video AND portrait raw video (iOS in landscape mode).
   // Returns { lanes, dividers } on success, or null if detection failed.
   autoDetectLanes(maxLanes = 8) {
     if (!this._video || this._video.readyState < 2) return null;
@@ -384,55 +428,70 @@ export class FinishLineDetector {
     ac.width   = AW; ac.height = AH;
     const actx = ac.getContext('2d', { willReadFrequently: true });
     actx.drawImage(this._video, 0, 0, AW, AH);
-    const img = actx.getImageData(0, 0, AW, AH).data;
+    const img  = actx.getImageData(0, 0, AW, AH).data;
 
-    // Row-average brightness (use center 60% horizontally to avoid edge vignetting)
-    const xStart = Math.floor(AW * 0.20);
-    const xEnd   = Math.floor(AW * 0.80);
-    const xSpan  = xEnd - xStart;
-    const rowBrightness = new Float32Array(AH);
-    for (let y = 0; y < AH; y++) {
-      let sum = 0;
-      for (let x = xStart; x < xEnd; x++) {
-        const i = (y * AW + x) * 4;
-        sum += (img[i] * 0.299 + img[i + 1] * 0.587 + img[i + 2] * 0.114);
+    // When camera delivers portrait pixels in landscape mode (iOS), lane lines
+    // appear as COLUMNS (not rows) in the raw image → analyze column brightness.
+    const swapped = this._isAxesSwapped();
+    const N       = swapped ? AW : AH;   // number of slices along the lane axis
+
+    const sliceBrightness = new Float32Array(N);
+    if (!swapped) {
+      // Lane axis = Y (rows). Average brightness across center 60% of X.
+      const x0 = Math.floor(AW * 0.20), x1 = Math.floor(AW * 0.80);
+      for (let y = 0; y < AH; y++) {
+        let s = 0;
+        for (let x = x0; x < x1; x++) {
+          const i = (y * AW + x) * 4;
+          s += img[i] * 0.299 + img[i+1] * 0.587 + img[i+2] * 0.114;
+        }
+        sliceBrightness[y] = s / (x1 - x0);
       }
-      rowBrightness[y] = sum / xSpan;
+    } else {
+      // Lane axis = X (columns). Average brightness across center 60% of Y.
+      const y0 = Math.floor(AH * 0.20), y1 = Math.floor(AH * 0.80);
+      for (let x = 0; x < AW; x++) {
+        let s = 0;
+        for (let y = y0; y < y1; y++) {
+          const i = (y * AW + x) * 4;
+          s += img[i] * 0.299 + img[i+1] * 0.587 + img[i+2] * 0.114;
+        }
+        sliceBrightness[x] = s / (y1 - y0);
+      }
     }
 
-    // Smooth with a 3-row box filter to reduce noise
-    const smoothed = new Float32Array(AH);
-    for (let y = 0; y < AH; y++) {
-      smoothed[y] = (rowBrightness[Math.max(0, y - 1)] +
-                     rowBrightness[y] +
-                     rowBrightness[Math.min(AH - 1, y + 1)]) / 3;
+    // 3-slice box-filter smoothing
+    const smoothed = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      smoothed[i] = (sliceBrightness[Math.max(0, i-1)] +
+                     sliceBrightness[i] +
+                     sliceBrightness[Math.min(N-1, i+1)]) / 3;
     }
 
-    // Adaptive threshold: mean + fraction of (max - mean)
+    // Adaptive threshold: mean + 30% of dynamic range
     let mean = 0, maxB = 0;
-    for (let y = 0; y < AH; y++) { mean += smoothed[y]; if (smoothed[y] > maxB) maxB = smoothed[y]; }
-    mean /= AH;
-    const thresh = mean + (maxB - mean) * 0.35;
+    for (let i = 0; i < N; i++) { mean += smoothed[i]; if (smoothed[i] > maxB) maxB = smoothed[i]; }
+    mean /= N;
+    const thresh = mean + (maxB - mean) * 0.30;   // 30% → more lenient
 
-    // Find local maxima above threshold, with minimum gap between peaks
-    const MIN_GAP = Math.max(4, Math.floor(AH / (maxLanes + 1)));
+    // Local-maxima peaks with minimum spacing
+    const MIN_GAP = Math.max(3, Math.floor(N / (maxLanes + 1)));
     const peaks = [];
-    for (let y = 1; y < AH - 1; y++) {
-      if (smoothed[y] > thresh &&
-          smoothed[y] >= smoothed[y - 1] &&
-          smoothed[y] >= smoothed[y + 1]) {
-        if (!peaks.length || y - peaks[peaks.length - 1] > MIN_GAP) {
-          peaks.push(y);
+    for (let i = 1; i < N - 1; i++) {
+      if (smoothed[i] > thresh &&
+          smoothed[i] >= smoothed[i-1] &&
+          smoothed[i] >= smoothed[i+1]) {
+        if (!peaks.length || i - peaks[peaks.length-1] > MIN_GAP) {
+          peaks.push(i);
         }
       }
     }
 
-    // Need 1–(maxLanes-1) dividers to define 2–maxLanes lanes
     if (peaks.length < 1 || peaks.length >= maxLanes) return null;
 
     const detectedLanes = peaks.length + 1;
     this._laneCount    = detectedLanes;
-    this._laneDividers = peaks.map(p => p / AH);
+    this._laneDividers = peaks.map(p => p / N);  // 0–1 fractions along the lane axis
     this._cooldowns    = new Array(detectedLanes).fill(false);
     return { lanes: detectedLanes, dividers: this._laneDividers.slice() };
   }
