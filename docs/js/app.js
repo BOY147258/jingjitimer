@@ -1284,14 +1284,14 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    // Grace period = time to FIRST crossing.
-    // For multi-lap: per-lap distance = totalDistance / laps (NOT trackLength which defaults to 400m).
-    // e.g. 400m in 2 laps → perLap = 200m → grace = 18s×0.7 = 12.6s
-    //      normal person runs 200m in ~28-35s → 28 > 12.6 → detected ✓
-    const perLapDist = state.lapCount > 1
-      ? Math.round(state.distance / state.lapCount)   // always compute, never use trackLength default
-      : state.distance;
-    const graceMs    = Math.round(minRaceGraceMs(perLapDist) * 0.70);
+    // Grace period:
+    //   Multi-lap → flat 8 seconds. Enough to suppress false-start triggers (athletes
+    //   getting into position, gun echo, vibration). Works for ALL speeds: WR sprinter
+    //   clears 200 m in 19 s; primary-school walker takes 3+ min. Both >> 8 s. ✓
+    //   Single-lap → WR-based (need longer protection since finish = first crossing).
+    const graceMs = state.lapCount > 1
+      ? 8000
+      : Math.round(minRaceGraceMs(state.distance) * 0.70);
     const graceUntil = performance.now() + graceMs;
     // For multi-lap: use longer cooldown to prevent double-counting same lap crossing
     detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
@@ -1572,14 +1572,13 @@ function onFinishDeviceRaceStart(event) {
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
   detector.onCloseFinish = null;
-  // Grace period = time to FIRST crossing (per-lap distance).
-  // MUST use distance/lapCount, NOT state.trackLength (defaults to 400m and causes wrong grace).
-  // e.g. 400m / 2 laps = 200m → grace = 18000×0.7 = 12600ms = 12.6s
-  //      normal person's first 200m in ~28-35s → 28 > 12.6 → correctly detected
-  const fsPerLapDist = state.lapCount > 1
-    ? Math.round(state.distance / state.lapCount)   // always compute from distance & laps
-    : state.distance;
-  const fsGraceMs    = Math.round(minRaceGraceMs(fsPerLapDist) * 0.70);
+  // Grace period:
+  //   Multi-lap → flat 8 seconds. Simple, safe for ALL ability levels
+  //   (no world-record math, no window restrictions).
+  //   Single-lap → WR-based (needs longer window since only one crossing total).
+  const fsGraceMs = state.lapCount > 1
+    ? 8000
+    : Math.round(minRaceGraceMs(state.distance) * 0.70);
   const fsGraceUntil = performance.now() + fsGraceMs;
   // Multi-lap: use 3s cooldown to prevent same crossing being counted twice
   detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
@@ -1632,13 +1631,12 @@ function handleFinishCrossing(laneIdx, perfTs) {
   const prevTime = state.laneLastCrossingTime[laneIdx] ?? 0;
   const lapTime  = raceTime - prevTime;
 
-  // Per-lap minimum interval check (secondary guard against impossibly fast laps).
-  // Minimum lap time = 70% of world-record pace for that lap distance.
-  // This catches any triggers that slipped past the grace period or cooldown.
+  // Per-lap minimum interval: reject physically impossible back-to-back crossings.
+  // 5 seconds is far below any human's lap time (even Usain Bolt needs 9+ s for 100 m).
+  // This only catches sensor noise that slipped past the 3-second cooldown.
+  // NO upper limit — slow students / walkers are always accepted. ✓
   if (state.lapCount > 1 && state.laneCrossings[laneIdx] > 0) {
-    const perLapDist  = Math.round(state.distance / state.lapCount);
-    const minLapMs    = Math.round(minRaceGraceMs(perLapDist) * 0.70);
-    if (lapTime < minLapMs) return;  // lap came too soon — ignore
+    if (lapTime < 5000) return;  // < 5 s between crossings → impossible, ignore
   }
   state.laneLastCrossingTime[laneIdx] = raceTime;
   state.laneCrossings[laneIdx]++;

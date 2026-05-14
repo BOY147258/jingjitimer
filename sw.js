@@ -1,5 +1,5 @@
-// v25 — fix grace period: use distance/lapCount not trackLength (was blocking first lap)
-const CACHE = 'jingjitimer-v25';
+// v26 — multi-lap grace: flat 8s (works for all speeds); per-lap min: flat 5s
+const CACHE = 'jingjitimer-v26';
 
 const APP_SHELL = [
   './',
