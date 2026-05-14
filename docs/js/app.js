@@ -484,7 +484,9 @@ function registerSyncEvents() {
     // Show confirmed config in status label
     if (DOM.fsStateLabel && !state.raceStarted) {
       const lapStr = state.lapCount > 1 ? ` · ${state.lapCount}圈` : '';
-      DOM.fsStateLabel.textContent = `✅ 已就绪 · ${state.distance}m${lapStr} · ${state.laneCount}人`;
+      DOM.fsStateLabel.textContent = `✅ ${state.laneCount}道 · ${state.distance}m${lapStr} 已就绪`;
+      DOM.fsStateLabel.style.color = 'var(--green)';
+      setTimeout(() => { if (DOM.fsStateLabel) DOM.fsStateLabel.style.color = ''; }, 1500);
     }
   });
   sync.on('RACE_START', e => {
@@ -572,6 +574,8 @@ function confirmRole() {
     DOM.syncBadge.classList.remove('hidden');
     DOM.syncRoom.textContent = state.roomCode;
     $('tab-finish-main').classList.remove('hidden');
+    const fsRoomBadge = $('fs-room-badge');
+    if (fsRoomBadge) fsRoomBadge.textContent = state.roomCode;
   } else if (state.role === 'observer') {
     DOM.tabBarStart.classList.add('hidden');
     DOM.appTitle.textContent = '📋 成绩端';
