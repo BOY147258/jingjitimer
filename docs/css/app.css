@@ -423,7 +423,7 @@ input[type="text"]:focus { border-color: var(--accent); }
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
-.radio-name { font-size: 14px; font-weight: 600; }
+.radio-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .radio-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
 /* ── Slider ────────────────────────────────────────── */
@@ -945,9 +945,10 @@ input[type="text"]:focus { border-color: var(--accent); }
   outline: none;
 }
 .room-code-input:focus { border-color: var(--accent); }
-.room-status { font-size: 12px; text-align: center; color: var(--text-muted); margin-top: 8px; }
+.room-status { font-size: 12px; text-align: center; color: var(--text-muted); margin-top: 8px; line-height: 1.5; }
 .room-status.connected { color: var(--green); }
 .room-status.error { color: var(--red); }
+.room-status.warn  { color: var(--yellow); }
 
 /* ── Sync Badge ────────────────────────────────────── */
 .sync-badge {

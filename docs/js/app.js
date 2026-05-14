@@ -322,15 +322,10 @@ async function connectToRoom() {
 
   if (selectedRole === 'start') {
     const code = DOM.roomCodeSet.value.trim();
-    if (!code) {
-      DOM.roomStatus.textContent = '请设置房间码';
-      DOM.roomStatus.className   = 'room-status error';
-      DOM.btnConnect.disabled    = false;
-      return;
-    }
-    state.roomCode = code;
-  } else if (selectedRole === 'finish') {
-    const code = DOM.roomCodeInput.value.trim();
+    state.roomCode = code || String(Math.floor(1000 + Math.random() * 9000));
+    if (!code) DOM.roomCodeSet.value = state.roomCode;
+  } else if (selectedRole === 'finish' || selectedRole === 'observer') {
+    const code = DOM.roomCodeInput?.value.trim();
     if (!code) {
       DOM.roomStatus.textContent = '请输入发令端的房间码';
       DOM.roomStatus.className   = 'room-status error';
@@ -359,9 +354,16 @@ async function connectToRoom() {
     DOM.btnRoleConfirm.classList.remove('hidden');
     showToast(`已加入房间 ${state.roomCode}`, 'success');
   } catch (e) {
-    DOM.roomStatus.textContent = '连接失败：' + e.message;
-    DOM.roomStatus.className   = 'room-status error';
-    DOM.btnConnect.disabled    = false;
+    const isWsErr = e.message?.toLowerCase().includes('websocket') || e.message?.includes('failed');
+    DOM.roomStatus.innerHTML = isWsErr
+      ? '⚠️ 服务器未连接（离线模式）<br><span style="font-size:11px;color:#aaa">多设备同步暂不可用，可继续使用本机计时。</span>'
+      : '⚠️ 连接失败：' + e.message;
+    DOM.roomStatus.className = 'room-status warn';
+    DOM.btnConnect.disabled  = false;
+    // Still allow proceeding — start role can work as standalone timer
+    if (selectedRole === 'start') {
+      DOM.btnRoleConfirm.classList.remove('hidden');
+    }
   }
 }
 
@@ -1106,13 +1108,21 @@ function beginRace() {
     if (dnfBtn) dnfBtn.classList.remove('hidden');
   });
 
-  // Solo mode: activate camera crossing detection (canvas already init'd in enterRace)
+  // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
+    detector.stop();  // must stop preview loop before starting detection loop
+    const graceUntil = performance.now() + 2500; // 2.5s for camera to settle
+    DOM.timerSub.textContent = '📷 摄像头校准中...';
     detector.start(
       (laneIdx) => {
+        if (performance.now() < graceUntil) return; // ignore motion during warmup
         if (laneIdx < state.laneCount) finishLane(laneIdx);
       },
       (level) => {
+        if (performance.now() < graceUntil) {
+          DOM.timerSub.textContent = '📷 摄像头校准中...';
+          return;
+        }
         const pct = Math.min(100, level * 100);
         DOM.timerSub.textContent = level > 0.3
           ? `🔴 冲线检测 (${Math.round(pct)}%)`
@@ -1374,12 +1384,21 @@ function onFinishDeviceRaceStart(event) {
   detector.stop();
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
-  detector.onCloseFinish = null;  // finish device doesn't do arbitration (no lane cards here)
+  detector.onCloseFinish = null;
+  const fsGraceUntil = performance.now() + 2500; // 2.5s warmup — ignore motion from race start signal
   detector.start(
-    (laneIdx, perfTs) => handleFinishCrossing(laneIdx, perfTs),
+    (laneIdx, perfTs) => {
+      if (performance.now() < fsGraceUntil) return;
+      handleFinishCrossing(laneIdx, perfTs);
+    },
     (level) => {
       const pct = Math.min(100, level * 100);
       if (DOM.fsLevelFill) DOM.fsLevelFill.style.width = `${pct}%`;
+      if (DOM.fsDetectStatus) {
+        DOM.fsDetectStatus.textContent = performance.now() < fsGraceUntil
+          ? '📷 校准中，请勿移动摄像头...'
+          : (level > 0.3 ? `🔴 检测到动作 (${Math.round(pct)}%)` : '🟢 等待冲线...');
+      }
     }
   );
 
