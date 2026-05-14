@@ -5,14 +5,7 @@ import { Sync, generateRoomCode } from './sync2.js';
 import { FinishLineDetector }     from './finishline.js';
 import { ApiClient }              from './api-client.js';
 
-// ── 商业配置（上线前修改） ─────────────────────────────
-const APP_CONFIG = {
-  contactWeChat: 'jingjitimer',   // 你的微信号
-  premiumCode:   'JJVIP2024',     // 激活码，发布前改成复杂字符串
-  trialDays:     7,
-};
-const TRIAL_KEY   = 'jj_trial_start';
-const PREMIUM_KEY = 'jj_premium';
+const MAX_LANES = 8;
 
 // ── Global state ───────────────────────────────────────
 const state = {
@@ -202,14 +195,6 @@ async function init() {
   await sleep(400);
   DOM.loading.classList.add('hidden');
 
-  // Trial banner
-  if (!localStorage.getItem(PREMIUM_KEY)) {
-    const left = trialDaysLeft();
-    if (left > 0 && left <= APP_CONFIG.trialDays) {
-      showToast(left < 3 ? `⚠️ 免费试用还剩 ${left} 天，购买激活码继续使用` : `🎉 欢迎使用竞迹！免费试用 ${left} 天`, 'success');
-    }
-  }
-
   // WeChat browser can't use camera/mic at all – tell user to open in real browser
   if (isWeChat()) {
     showWeChatWarning();
@@ -225,94 +210,6 @@ function updateLapDisplay() {
   if (el) el.textContent = state.lapCount;
 }
 
-// ── 试用 & 激活 ────────────────────────────────────────
-function isPremium() {
-  if (localStorage.getItem(PREMIUM_KEY) === APP_CONFIG.premiumCode) return true;
-  let start = localStorage.getItem(TRIAL_KEY);
-  if (!start) { localStorage.setItem(TRIAL_KEY, Date.now()); start = Date.now(); }
-  return (Date.now() - Number(start)) / 86400000 <= APP_CONFIG.trialDays;
-}
-function trialDaysLeft() {
-  const s = localStorage.getItem(TRIAL_KEY);
-  if (!s) return APP_CONFIG.trialDays;
-  return Math.max(0, APP_CONFIG.trialDays - Math.floor((Date.now() - Number(s)) / 86400000));
-}
-function maxLanes() {
-  if (isPremium()) return 12;
-  return 6; // free hard limit
-}
-
-function showUpgradeDialog() {
-  if (document.getElementById('upgrade-overlay')) return;
-  const left = trialDaysLeft();
-  const trialNote = left > 0
-    ? `<div class="upg-trial">⏳ 免费试用还剩 <b>${left}</b> 天</div>`
-    : `<div class="upg-trial expired">试用期已结束，请购买授权继续使用</div>`;
-
-  const ov = document.createElement('div');
-  ov.id = 'upgrade-overlay';
-  ov.className = 'upgrade-overlay';
-  ov.innerHTML = `
-    <div class="upgrade-card">
-      <div class="upg-logo">竞迹</div>
-      <div class="upg-title">解锁专业版功能</div>
-      ${trialNote}
-      <div class="upg-plans">
-        <div class="upg-plan">
-          <div class="upg-plan-name">免费版</div>
-          <div class="upg-plan-price">永久免费</div>
-          <ul class="upg-features">
-            <li class="ok">✅ 6 道次以内</li>
-            <li class="ok">✅ 双端实时同步</li>
-            <li class="ok">✅ 摄像头自动识别</li>
-            <li class="no">❌ 数据导出</li>
-            <li class="no">❌ 8 道次及以上</li>
-          </ul>
-        </div>
-        <div class="upg-plan featured">
-          <div class="upg-badge">推荐</div>
-          <div class="upg-plan-name">年卡</div>
-          <div class="upg-plan-price">¥298<span>/年</span></div>
-          <ul class="upg-features">
-            <li class="ok">✅ 最多 12 道次</li>
-            <li class="ok">✅ Excel 成绩单导出</li>
-            <li class="ok">✅ 分圈成绩</li>
-            <li class="ok">✅ 优先技术支持</li>
-          </ul>
-        </div>
-        <div class="upg-plan">
-          <div class="upg-plan-name">月卡</div>
-          <div class="upg-plan-price">¥35<span>/月</span></div>
-          <ul class="upg-features">
-            <li class="ok">✅ 最多 8 道次</li>
-            <li class="ok">✅ Excel 成绩单导出</li>
-            <li class="ok">✅ 分圈成绩</li>
-          </ul>
-        </div>
-      </div>
-      <div class="upg-contact">
-        购买后获得激活码 · 微信：<b>${APP_CONFIG.contactWeChat}</b>
-      </div>
-      <div class="upg-code-row">
-        <input id="upg-code-inp" type="text" placeholder="输入激活码" autocomplete="off">
-        <button id="upg-code-btn">激活</button>
-      </div>
-      <button class="upg-close" id="upg-close">稍后再说</button>
-    </div>`;
-  document.getElementById('app').appendChild(ov);
-
-  document.getElementById('upg-code-btn').onclick = () => {
-    const code = document.getElementById('upg-code-inp').value.trim();
-    if (code === APP_CONFIG.premiumCode) {
-      localStorage.setItem(PREMIUM_KEY, code);
-      ov.remove();
-      showToast('✅ 激活成功！专业版已解锁', 'success');
-    } else {
-      showToast('激活码无效，请重新输入', 'warn');
-    }
-  };
-  document.getElementById('upg-close').onclick = () => ov.remove();
-}
 
 function recomputeLaps() {
   state.lapCount = Math.max(1, Math.ceil(state.distance / state.trackLength));
@@ -1716,7 +1613,6 @@ function obsRenderHistory() {
   }).join('');
 }
 function obsExportGroup() {
-  if (!isPremium()) { showUpgradeDialog(); return; }
   const ri = state.obsRaceInfo;
   const results = state.obsResults.filter(r => !r.isDNF).sort((a,b) => a.raceTime - b.raceTime);
   const dnfs    = state.obsResults.filter(r => r.isDNF);
@@ -1975,7 +1871,6 @@ function renderResults(race, blob) {
 }
 
 function exportResults() {
-  if (!isPremium()) { showUpgradeDialog(); return; }
 
   const history = getHistory();
   const race    = history[0];
@@ -2173,8 +2068,8 @@ function attachEventListeners() {
     }
   });
   $('btn-lane-plus').addEventListener('click', () => {
-    if (state.laneCount >= maxLanes()) { showUpgradeDialog(); return; }
-    if (state.laneCount < 12) {
+    if (state.laneCount >= MAX_LANES) return;
+    if (state.laneCount < MAX_LANES) {
       state.laneCount++;
       DOM.laneCountDisp.textContent = state.laneCount;
       buildLaneInputs(); saveSettings(); broadcastConfig();
