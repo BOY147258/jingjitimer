@@ -94,7 +94,7 @@
           <input type="text" id="server-url-input" class="room-code-input"
             style="width:100%;margin-top:6px;font-size:12px"
             placeholder="例：jingjitimer.onrender.com"
-            value="">
+            value="zestful-nurturing-production-50d7.up.railway.app">
           <div style="font-size:11px;color:#666;margin-top:4px">留空则使用当前网站地址</div>
         </details>
 
@@ -389,16 +389,16 @@
         <span class="fs-conn-dot" id="fs-conn-dot"></span>
         <span id="fs-state-label" class="fs-state-label">等待连接...</span>
       </div>
-      <div class="fs-rec-dot hidden" id="fs-rec-dot">● REC</div>
-      <button class="fs-home-btn" id="btn-fs-home" aria-label="返回主页">⌂</button>
-      <button class="fs-gear-btn" id="btn-fs-settings" aria-label="设置">⚙</button>
+      <div class="fs-topbar-right">
+        <span id="fs-room-badge" class="fs-room-badge"></span>
+        <div class="fs-rec-dot hidden" id="fs-rec-dot">● REC</div>
+        <button class="fs-home-btn" id="btn-fs-home" aria-label="返回主页">⌂</button>
+        <button class="fs-gear-btn" id="btn-fs-settings" aria-label="设置">⚙</button>
+      </div>
     </div>
 
     <!-- Right-side result cards (slide in as athletes cross) -->
     <div class="fs-results" id="fs-results"></div>
-
-    <!-- Tiny manual backup button (bottom-left) -->
-    <button id="btn-fs-manual" class="fs-manual-btn" disabled>手动</button>
 
     <!-- End-of-race fullscreen overlay -->
     <div class="fs-end hidden" id="fs-end">
@@ -428,7 +428,8 @@
         <div class="monitor-hint" id="fs-detect-status">等待摄像头...</div>
       </div>
       <button id="btn-fs-flip" class="btn btn-ghost btn-sm mt-8" style="width:100%">🔄 切换前/后摄像头</button>
-      <button id="btn-fs-reset-lanes" class="btn btn-ghost btn-sm mt-8" style="width:100%">⊟ 重置道次分界线</button>
+      <button id="btn-fs-auto-lanes"  class="btn btn-ghost btn-sm mt-8" style="width:100%">🔍 自动识别道次</button>
+      <button id="btn-fs-reset-lanes" class="btn btn-ghost btn-sm mt-4" style="width:100%">⊟ 重置道次分界线</button>
       <button id="btn-fs-guide" class="btn btn-ghost btn-sm mt-4" style="width:100%">📖 机位使用说明</button>
       <button id="btn-fs-settings-close" class="btn btn-ghost mt-8" style="width:100%">关闭</button>
     </div>
@@ -493,9 +494,10 @@
         </div>
         <ul class="guide-list">
           <li>手机<b>横向（landscape）</b>放在三脚架上</li>
-          <li>摄像头对准跑道，从<b>侧面</b>拍，不要俯拍</li>
-          <li>高度约 <b>0.8–1.2 米</b>（拍到运动员腰部位置）</li>
+          <li>从跑道<b>侧面</b>拍，对准终点线，不要从正后方拍</li>
+          <li>高度约 <b>1.5–2 米</b>，稍微<b>向下俯角 15–25°</b>——这样各道次运动员不互相遮挡</li>
           <li>终点线在画面<b>正中竖向</b>——拖动彩色竖线对准</li>
+          <li>高度过低（＜1m）时，最内侧道运动员会遮住外侧道，建议宁高勿低</li>
         </ul>
       </div>
 

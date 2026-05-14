@@ -372,6 +372,71 @@ export class FinishLineDetector {
     } catch { return null; }
   }
 
+  // Auto-detect lane count and divider positions from a full video frame.
+  // Scans row brightness across the entire frame to find bright white lane lines
+  // painted on the track, then updates _laneCount and _laneDividers.
+  // Returns { lanes, dividers } on success, or null if detection failed.
+  autoDetectLanes(maxLanes = 8) {
+    if (!this._video || this._video.readyState < 2) return null;
+
+    const AW = 200, AH = 150;
+    const ac   = document.createElement('canvas');
+    ac.width   = AW; ac.height = AH;
+    const actx = ac.getContext('2d', { willReadFrequently: true });
+    actx.drawImage(this._video, 0, 0, AW, AH);
+    const img = actx.getImageData(0, 0, AW, AH).data;
+
+    // Row-average brightness (use center 60% horizontally to avoid edge vignetting)
+    const xStart = Math.floor(AW * 0.20);
+    const xEnd   = Math.floor(AW * 0.80);
+    const xSpan  = xEnd - xStart;
+    const rowBrightness = new Float32Array(AH);
+    for (let y = 0; y < AH; y++) {
+      let sum = 0;
+      for (let x = xStart; x < xEnd; x++) {
+        const i = (y * AW + x) * 4;
+        sum += (img[i] * 0.299 + img[i + 1] * 0.587 + img[i + 2] * 0.114);
+      }
+      rowBrightness[y] = sum / xSpan;
+    }
+
+    // Smooth with a 3-row box filter to reduce noise
+    const smoothed = new Float32Array(AH);
+    for (let y = 0; y < AH; y++) {
+      smoothed[y] = (rowBrightness[Math.max(0, y - 1)] +
+                     rowBrightness[y] +
+                     rowBrightness[Math.min(AH - 1, y + 1)]) / 3;
+    }
+
+    // Adaptive threshold: mean + fraction of (max - mean)
+    let mean = 0, maxB = 0;
+    for (let y = 0; y < AH; y++) { mean += smoothed[y]; if (smoothed[y] > maxB) maxB = smoothed[y]; }
+    mean /= AH;
+    const thresh = mean + (maxB - mean) * 0.35;
+
+    // Find local maxima above threshold, with minimum gap between peaks
+    const MIN_GAP = Math.max(4, Math.floor(AH / (maxLanes + 1)));
+    const peaks = [];
+    for (let y = 1; y < AH - 1; y++) {
+      if (smoothed[y] > thresh &&
+          smoothed[y] >= smoothed[y - 1] &&
+          smoothed[y] >= smoothed[y + 1]) {
+        if (!peaks.length || y - peaks[peaks.length - 1] > MIN_GAP) {
+          peaks.push(y);
+        }
+      }
+    }
+
+    // Need 1–(maxLanes-1) dividers to define 2–maxLanes lanes
+    if (peaks.length < 1 || peaks.length >= maxLanes) return null;
+
+    const detectedLanes = peaks.length + 1;
+    this._laneCount    = detectedLanes;
+    this._laneDividers = peaks.map(p => p / AH);
+    this._cooldowns    = new Array(detectedLanes).fill(false);
+    return { lanes: detectedLanes, dividers: this._laneDividers.slice() };
+  }
+
   // Allow user to reposition finish line and lane dividers by touch/click
   bindDrag(displayCanvas) {
     displayCanvas.style.touchAction = 'none';

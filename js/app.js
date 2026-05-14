@@ -165,7 +165,6 @@ const DOM = {
   fsStateLabel:     $('fs-state-label'),
   fsRecDot:         $('fs-rec-dot'),
   fsResults:        $('fs-results'),
-  btnFsManual:      $('btn-fs-manual'),
   fsEnd:            $('fs-end'),
   fsEndList:        $('fs-end-list'),
   btnFsNextGroup:   $('btn-fs-next-group'),
@@ -485,7 +484,9 @@ function registerSyncEvents() {
     // Show confirmed config in status label
     if (DOM.fsStateLabel && !state.raceStarted) {
       const lapStr = state.lapCount > 1 ? ` · ${state.lapCount}圈` : '';
-      DOM.fsStateLabel.textContent = `✅ 已就绪 · ${state.distance}m${lapStr} · ${state.laneCount}人`;
+      DOM.fsStateLabel.textContent = `✅ ${state.laneCount}道 · ${state.distance}m${lapStr} 已就绪`;
+      DOM.fsStateLabel.style.color = 'var(--green)';
+      setTimeout(() => { if (DOM.fsStateLabel) DOM.fsStateLabel.style.color = ''; }, 1500);
     }
   });
   sync.on('RACE_START', e => {
@@ -573,6 +574,8 @@ function confirmRole() {
     DOM.syncBadge.classList.remove('hidden');
     DOM.syncRoom.textContent = state.roomCode;
     $('tab-finish-main').classList.remove('hidden');
+    const fsRoomBadge = $('fs-room-badge');
+    if (fsRoomBadge) fsRoomBadge.textContent = state.roomCode;
   } else if (state.role === 'observer') {
     DOM.tabBarStart.classList.add('hidden');
     DOM.appTitle.textContent = '📋 成绩端';
@@ -1113,11 +1116,12 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    const graceUntil = performance.now() + 2500; // 2.5s for camera to settle
+    const graceMs    = Math.max(3000, state.distance * 100); // dynamic: 100m→10s, 200m→20s, 400m→40s
+    const graceUntil = performance.now() + graceMs;
     DOM.timerSub.textContent = '📷 摄像头校准中...';
     detector.start(
       (laneIdx) => {
-        if (performance.now() < graceUntil) return; // ignore motion during warmup
+        if (performance.now() < graceUntil) return; // ignore motion during warmup / race-start false trigger
         if (laneIdx < state.laneCount) finishLane(laneIdx);
       },
       (level) => {
@@ -1218,14 +1222,12 @@ function showRaceEndActions(race, blob) {
       <button class="btn btn-start rend-btn-next" id="btn-next-group">▶ 下一组</button>
       <button class="btn btn-secondary rend-btn-round" id="btn-next-round">▲ 下一轮</button>
     </div>
-    <button class="btn btn-ghost rend-btn-full" id="btn-share-results" style="margin-top:8px;width:100%">📲 分享成绩</button>
-    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:6px;width:100%">查看完整成绩</button>`;
+    <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:8px;width:100%">查看完整成绩</button>`;
 
-  DOM.lanesWrap.insertAdjacentElement('beforebegin', card);
+  DOM.lanesWrap.insertAdjacentElement('afterbegin', card);
 
   $('btn-next-group').onclick    = () => { card.remove(); nextGroup(false); };
   $('btn-next-round').onclick    = () => { card.remove(); nextGroup(true); };
-  $('btn-share-results').onclick = () => showShareCard(race);
   $('btn-see-results').onclick   = () => { renderResults(race, blob); showTab('results'); };
 
   // Play victory sound for winner
@@ -1373,21 +1375,20 @@ function onFinishDeviceRaceStart(event) {
 
   beep(660, 200);
 
-  // Start recording
+  // Start composite recording (video + finish-line overlay)
   if (state.camGranted && recorder.hasVideo) {
-    recorder.start();
+    recorder.startComposite(DOM.finishVideoFs, DOM.finishCanvasFs);
     DOM.fsRecDot?.classList.remove('hidden');
   }
 
-  // Enable manual backup button
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = false;
 
   // Re-start detector with full crossing callbacks (same video/canvas, already inited)
   detector.stop();
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
   detector.onCloseFinish = null;
-  const fsGraceUntil = performance.now() + 2500; // 2.5s warmup — ignore motion from race start signal
+  const fsGraceMs    = Math.max(3000, state.distance * 100); // dynamic grace: 100m→10s, 200m→20s, 400m→40s
+  const fsGraceUntil = performance.now() + fsGraceMs;
   detector.start(
     (laneIdx, perfTs) => {
       if (performance.now() < fsGraceUntil) return;
@@ -1454,7 +1455,8 @@ function handleFinishCrossing(laneIdx, perfTs) {
   }
 
   // Final crossing — capture frame + record finish
-  const photoDataUrl = detector.captureFrame();
+  const photoDataUrl = detector.captureFrame(640, 360,
+    `${laneName}  ${PrecisionTimer.formatFull(raceTime)}`);
   state.lanesDone++;
   const rank = state.lanesDone;
 
@@ -1518,24 +1520,25 @@ async function onFinishDeviceRaceEnd() {
   detector.stop();
 
   DOM.fsRecDot?.classList.add('hidden');
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = true;
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '✅ 比赛结束';
 
   let blob = null;
   if (recorder.recording) blob = await recorder.stop();
   if (blob) state.finishRecorderBlob = blob;
 
-  // Build end-of-race result list
+  // Build end-of-race result list with crossing photos
   if (DOM.fsEndList) {
     const medals = ['🥇','🥈','🥉'];
-    DOM.fsEndList.innerHTML = state.crossings
-      .map(c => `
-        <div class="fs-end-row">
+    const sorted = [...state.crossings].sort((a, b) => a.rank - b.rank);
+    DOM.fsEndList.innerHTML = sorted.map(c => `
+      <div class="fs-end-row">
+        ${c.photo ? `<img class="fs-end-photo" src="${c.photo}" alt="${c.name}冲线">` : ''}
+        <div class="fs-end-info">
           <span class="fs-end-rank">${medals[c.rank-1] || `#${c.rank}`}</span>
           <span class="fs-end-name">${c.name}</span>
           <span class="fs-end-time">${PrecisionTimer.formatFull(c.raceTime)}</span>
-        </div>`)
-      .join('');
+        </div>
+      </div>`).join('');
   }
 
   if (DOM.fsEnd) DOM.fsEnd.classList.remove('hidden');
@@ -1543,11 +1546,11 @@ async function onFinishDeviceRaceEnd() {
   showToast('✅ 比赛结束', 'success');
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
 
-  // Auto-dismiss result overlay after 10s — finish device needs no manual button press
+  // Auto-dismiss after 30s (longer so reviewers can examine photos)
   setTimeout(() => {
     if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
     if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '⏳ 等待下一组发令...';
-  }, 10000);
+  }, 30000);
 }
 
 function resetFinishDevice() {
@@ -1558,12 +1561,12 @@ function resetFinishDevice() {
   state.laneLastCrossingTime = {};
   state.lanesDone = 0;
   state.recordingStart = null;
+  recorder.clearBlob();
   if (mainStream && state.camGranted) recorder.initFromStream(mainStream);
 
   if (DOM.fsResults) DOM.fsResults.innerHTML = '';
   if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '等待发令信号...';
-  if (DOM.btnFsManual) DOM.btnFsManual.disabled = true;
 
   // Resume preview detection
   detector.stop();
@@ -1692,88 +1695,6 @@ function updateLatencyBadge() {
   if (rtt === null || rtt === undefined) { badge.textContent = ''; return; }
   badge.textContent = `${rtt}ms`;
   badge.className = 'latency-badge ' + (rtt < 30 ? 'lat-good' : rtt < 80 ? 'lat-ok' : 'lat-bad');
-}
-
-// ── Results share card (canvas image + QR) ────────────
-function showShareCard(race) {
-  const sorted = race.lanes.filter(l => l.time != null).sort((a,b) => a.time - b.time);
-  const org    = DOM.orgName?.value?.trim() || '';
-  const medals = ['🥇','🥈','🥉'];
-
-  // Build canvas results image
-  const W = 480, H = 80 + 52 * (sorted.length + 1) + 60;
-  const cv  = document.createElement('canvas');
-  cv.width  = W * 2; cv.height = H * 2;  // 2x for retina
-  const ctx = cv.getContext('2d');
-  ctx.scale(2, 2);
-
-  // Background
-  ctx.fillStyle = '#080810';
-  ctx.fillRect(0, 0, W, H);
-
-  // Brand bar
-  const grad = ctx.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0, '#ff6200'); grad.addColorStop(1, '#ff9f45');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, 6);
-
-  // Title
-  ctx.fillStyle = '#ff6200';
-  ctx.font = 'bold 22px -apple-system, PingFang SC, sans-serif';
-  ctx.fillText('竞迹', 20, 42);
-  ctx.fillStyle = '#7778a0';
-  ctx.font = '13px -apple-system, PingFang SC, sans-serif';
-  const meta = `${org ? org + '  ' : ''}${race.distance}m  第${race.round}轮 第${race.group}组`;
-  ctx.fillText(meta, 20, 62);
-
-  // Results rows
-  sorted.forEach((l, i) => {
-    const y = 88 + i * 52;
-    if (i === 0) {
-      ctx.fillStyle = 'rgba(255,214,0,0.07)';
-      ctx.fillRect(0, y - 20, W, 50);
-    }
-    ctx.fillStyle = i === 0 ? '#ffd600' : '#eeeeff';
-    ctx.font = `${i === 0 ? 'bold' : ''} 15px -apple-system, PingFang SC, sans-serif`;
-    ctx.fillText(`${medals[i] || `#${i+1}`}  ${l.name}`, 20, y + 8);
-    ctx.fillStyle = i === 0 ? '#ffd600' : '#00e676';
-    ctx.font = 'bold 19px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(PrecisionTimer.formatFull(l.time), W - 20, y + 10);
-    ctx.textAlign = 'left';
-  });
-
-  // Footer
-  ctx.fillStyle = '#3a3a5c';
-  ctx.font = '11px -apple-system, PingFang SC, sans-serif';
-  ctx.fillText('竞迹 · 精准运动计时  jj.run', 20, H - 14);
-
-  const imgUrl = cv.toDataURL('image/png');
-
-  // QR text — compact results summary
-  const qrText = [
-    `竞迹成绩 ${race.distance}m`,
-    org ? `学校: ${org}` : '',
-    `第${race.round}轮 第${race.group}组`,
-    ...sorted.slice(0, 5).map((l, i) => `${medals[i]||`#${i+1}`} ${l.name} ${PrecisionTimer.formatFull(l.time)}`),
-  ].filter(Boolean).join('\n');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrText)}`;
-
-  // Show modal
-  const ov = document.createElement('div');
-  ov.className = 'share-overlay';
-  ov.innerHTML = `
-    <div class="share-card">
-      <div class="share-title">📲 分享成绩</div>
-      <img class="share-img" src="${imgUrl}" alt="成绩卡">
-      <div class="share-hint">长按图片保存 · 或扫描二维码</div>
-      <img class="share-qr" src="${qrApiUrl}" alt="QR" crossorigin="anonymous">
-      <div class="share-qr-hint">扫码即可查看成绩</div>
-      <button class="btn btn-secondary share-close">关闭</button>
-    </div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('.share-close').onclick = () => ov.remove();
-  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
 
 // ── Roster CSV import ──────────────────────────────────
@@ -2179,17 +2100,6 @@ function attachEventListeners() {
   $('cf-confirm')?.addEventListener('click', () => hideCloseFinish());
   $('cf-swap')?.addEventListener('click',    () => swapCloseFinish());
 
-  // Manual crossing (backup) — pick the unfinished lane with fewest crossings
-  DOM.btnFsManual?.addEventListener('click', () => {
-    let targetLane = 0;
-    let minCross   = Infinity;
-    for (let i = 0; i < state.laneCount; i++) {
-      const c = state.laneCrossings[i] ?? 0;
-      if (c < state.lapCount && c < minCross) { minCross = c; targetLane = i; }
-    }
-    handleFinishCrossing(targetLane, performance.now());
-  });
-
   // Distance selector
   $('race-distance')?.addEventListener('change', function() {
     const customRow = $('custom-dist-row');
@@ -2257,6 +2167,17 @@ function attachEventListeners() {
   $('btn-guide-ok')?.addEventListener('click', closeGuide);
   $('guide-overlay')?.addEventListener('click', e => {
     if (e.target.id === 'guide-overlay') closeGuide();
+  });
+
+  // Auto-detect lanes from current video frame
+  $('btn-fs-auto-lanes')?.addEventListener('click', () => {
+    const result = detector.autoDetectLanes(8);
+    if (result) {
+      state.laneCount = result.lanes;
+      showToast(`自动识别到 ${result.lanes} 条道次`, 'success');
+    } else {
+      showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warning');
+    }
   });
 
   // Reset lane dividers to equal spacing

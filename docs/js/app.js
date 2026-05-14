@@ -2169,6 +2169,17 @@ function attachEventListeners() {
     if (e.target.id === 'guide-overlay') closeGuide();
   });
 
+  // Auto-detect lanes from current video frame
+  $('btn-fs-auto-lanes')?.addEventListener('click', () => {
+    const result = detector.autoDetectLanes(8);
+    if (result) {
+      state.laneCount = result.lanes;
+      showToast(`自动识别到 ${result.lanes} 条道次`, 'success');
+    } else {
+      showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warning');
+    }
+  });
+
   // Reset lane dividers to equal spacing
   const resetLaneDividers = () => {
     detector._resetDividers(state.laneCount);
