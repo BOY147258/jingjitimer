@@ -1112,11 +1112,12 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    const graceUntil = performance.now() + 2500; // 2.5s for camera to settle
+    const graceMs    = Math.max(3000, state.distance * 100); // dynamic: 100m→10s, 200m→20s, 400m→40s
+    const graceUntil = performance.now() + graceMs;
     DOM.timerSub.textContent = '📷 摄像头校准中...';
     detector.start(
       (laneIdx) => {
-        if (performance.now() < graceUntil) return; // ignore motion during warmup
+        if (performance.now() < graceUntil) return; // ignore motion during warmup / race-start false trigger
         if (laneIdx < state.laneCount) finishLane(laneIdx);
       },
       (level) => {
@@ -1382,7 +1383,8 @@ function onFinishDeviceRaceStart(event) {
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
   detector.onCloseFinish = null;
-  const fsGraceUntil = performance.now() + 2500; // 2.5s warmup — ignore motion from race start signal
+  const fsGraceMs    = Math.max(3000, state.distance * 100); // dynamic grace: 100m→10s, 200m→20s, 400m→40s
+  const fsGraceUntil = performance.now() + fsGraceMs;
   detector.start(
     (laneIdx, perfTs) => {
       if (performance.now() < fsGraceUntil) return;
