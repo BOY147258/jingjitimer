@@ -722,7 +722,9 @@ input[type="text"]:focus { border-color: var(--accent); }
   gap: 8px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
+.lanes-wrap > * { flex-shrink: 0; }
 
 .lane-card {
   display: flex;

@@ -1220,7 +1220,7 @@ function showRaceEndActions(race, blob) {
     </div>
     <button class="btn btn-ghost rend-btn-full" id="btn-see-results" style="margin-top:8px;width:100%">查看完整成绩</button>`;
 
-  DOM.lanesWrap.insertAdjacentElement('beforebegin', card);
+  DOM.lanesWrap.insertAdjacentElement('afterbegin', card);
 
   $('btn-next-group').onclick    = () => { card.remove(); nextGroup(false); };
   $('btn-next-round').onclick    = () => { card.remove(); nextGroup(true); };
