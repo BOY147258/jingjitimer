@@ -38,6 +38,8 @@ const state = {
   laneCrossings:       {},
   laneLastCrossingTime:{},
   lanesDone:           0,
+  // lane sync between start ↔ finish device
+  finishDeviceLanes: null,  // lane count last reported by finish device (null = not yet known)
   // observer device
   obsResults:   [],   // crossings this group
   obsHistory:   [],   // array of {round,group,results[]}
@@ -389,6 +391,8 @@ function registerSyncEvents() {
     state.peerConnected = sync.peerOnline;
     if (e.role === 'finish') {
       showToast(fc > 0 ? `一个终点端离线（剩余 ${fc} 个）` : '终点端已离线', 'warn');
+      // Clear finish device lane sync if no finish devices remain
+      if (fc === 0) { state.finishDeviceLanes = null; updateLaneSyncStatus(); }
     } else {
       showToast('对端已离线', 'warn');
     }
@@ -530,10 +534,14 @@ function registerSyncEvents() {
   sync.on('AUTO_DETECT_RESULT', e => {
     if (state.role !== 'start') return;
     if (e.lanes) {
-      state.laneCount = e.lanes;
-      DOM.laneCountDisp.textContent = e.lanes;
-      buildLaneInputs(); saveSettings();
-      showToast(`📐 终点端识别到 ${e.lanes} 条跑道`, 'success');
+      state.finishDeviceLanes = e.lanes;
+      updateLaneSyncStatus();
+      // If they match, just confirm; if not, show mismatch UI (don't auto-overwrite)
+      if (e.lanes === state.laneCount) {
+        showToast(`✅ 终点端已同步：${e.lanes} 条跑道`, 'success');
+      } else {
+        showToast(`⚠️ 终点端识别到 ${e.lanes} 道 vs 发令端 ${state.laneCount} 道，请核对`, 'warn');
+      }
     } else {
       showToast('终点端识别失败，请手动设置道次', 'warn');
     }
@@ -1169,6 +1177,19 @@ function minRaceGraceMs(distanceM) {
 
 function beginRace() {
   if (state.raceStarted) return;
+
+  // ── 道次不一致警告（发令端 vs 终点端）──────────────────
+  if (state.role === 'start' && state.finishDeviceLanes !== null
+      && state.finishDeviceLanes !== state.laneCount) {
+    const ok = confirm(
+      `⚠️ 道次不一致！\n\n` +
+      `发令端：${state.laneCount} 道\n` +
+      `终点端：${state.finishDeviceLanes} 道\n\n` +
+      `建议先统一道次再发令。\n点「取消」返回修改，点「确定」强制继续（以发令端 ${state.laneCount} 道为准）。`
+    );
+    if (!ok) return;  // user chose to go back and fix
+  }
+
   state.raceStarted  = true;
   state.raceFinished = false;
   state.raceStartServerTime = sync.serverNow();
@@ -2100,6 +2121,7 @@ function attachEventListeners() {
       state.laneCount--;
       DOM.laneCountDisp.textContent = state.laneCount;
       buildLaneInputs(); saveSettings(); broadcastConfig();
+      updateLaneSyncStatus();
       if (state.role === 'solo' && DOM.raceCanvas && !state.raceStarted) {
         detector.stop();
         detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
@@ -2113,6 +2135,7 @@ function attachEventListeners() {
       state.laneCount++;
       DOM.laneCountDisp.textContent = state.laneCount;
       buildLaneInputs(); saveSettings(); broadcastConfig();
+      updateLaneSyncStatus();
       if (state.role === 'solo' && DOM.raceCanvas && !state.raceStarted) {
         detector.stop();
         detector.init(DOM.raceVideo, DOM.raceCanvas, state.laneCount);
@@ -2141,6 +2164,16 @@ function attachEventListeners() {
     } else {
       showToast('请先连接终点设备', 'warn');
     }
+  });
+
+  // ── 发令端"采用终点端道次"按钮 ─────────────────────────
+  $('btn-lane-sync-adopt')?.addEventListener('click', () => {
+    if (!state.finishDeviceLanes) return;
+    state.laneCount = state.finishDeviceLanes;
+    DOM.laneCountDisp.textContent = state.laneCount;
+    buildLaneInputs(); saveSettings(); broadcastConfig();
+    updateLaneSyncStatus();
+    showToast(`✅ 已采用终点端道次：${state.laneCount} 道`, 'success');
   });
 
   // Lap count
@@ -2312,6 +2345,37 @@ function attachEventListeners() {
     updateLaneStatusBar();
   };
   $('btn-fs-reset-lanes')?.addEventListener('click', resetLaneDividers);
+}
+
+// ── Lane sync status (start device setup page) ─────────
+function updateLaneSyncStatus() {
+  const row    = $('lane-sync-row');
+  const icon   = $('lane-sync-icon');
+  const text   = $('lane-sync-text');
+  const adopt  = $('btn-lane-sync-adopt');
+  if (!row) return;
+
+  // Only relevant on start device when finish device has reported
+  if (state.role !== 'start' || !state.finishDeviceLanes) {
+    row.classList.add('hidden');
+    return;
+  }
+
+  row.classList.remove('hidden');
+  const fd = state.finishDeviceLanes;
+  const sd = state.laneCount;
+
+  if (fd === sd) {
+    icon.textContent  = '✅';
+    text.textContent  = `终点端已同步（${fd} 道）`;
+    row.dataset.state = 'ok';
+    if (adopt) adopt.classList.add('hidden');
+  } else {
+    icon.textContent  = '⚠️';
+    text.textContent  = `发令端 ${sd} 道 ≠ 终点端 ${fd} 道`;
+    row.dataset.state = 'mismatch';
+    if (adopt) { adopt.textContent = `采用终点端 ${fd} 道`; adopt.classList.remove('hidden'); }
+  }
 }
 
 // ── Lane status bar (finish device) ────────────────────

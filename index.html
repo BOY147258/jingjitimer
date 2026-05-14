@@ -166,6 +166,12 @@
             <button class="step-btn" id="btn-lane-plus">+</button>
           </div>
           <button class="btn-lane-auto" id="btn-auto-detect-lanes">🔍 自动识别</button>
+          <!-- Sync status with finish device — hidden until finish device reports -->
+          <div class="lane-sync-row hidden" id="lane-sync-row">
+            <span class="lane-sync-icon" id="lane-sync-icon">✅</span>
+            <span class="lane-sync-text" id="lane-sync-text"></span>
+            <button class="btn-lane-sync-adopt hidden" id="btn-lane-sync-adopt"></button>
+          </div>
         </div>
         <div class="core-divider"></div>
         <div class="core-field">

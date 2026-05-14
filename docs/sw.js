@@ -1,5 +1,5 @@
-// v18 — lane auto-detect on start device + finish device floating button
-const CACHE = 'jingjitimer-v18';
+// v19 — lane sync status: mismatch warning + adopt button + race-start guard
+const CACHE = 'jingjitimer-v19';
 
 const APP_SHELL = [
   './',

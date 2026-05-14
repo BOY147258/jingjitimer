@@ -1574,6 +1574,45 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 .btn-lane-auto:active { background: rgba(255,98,0,0.25); transform: scale(0.96); }
 
+/* ── 发令端 — 道次同步状态行 ──────────────────────────── */
+.lane-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.lane-sync-row[data-state="mismatch"] {
+  background: rgba(255,160,0,0.10);
+  border-color: rgba(255,160,0,0.35);
+}
+.lane-sync-row[data-state="ok"] {
+  background: rgba(0,200,83,0.10);
+  border-color: rgba(0,200,83,0.30);
+}
+.lane-sync-icon { font-size: 14px; flex-shrink: 0; }
+.lane-sync-text { flex: 1; color: var(--text-muted); font-weight: 600; min-width: 0; }
+.lane-sync-row[data-state="mismatch"] .lane-sync-text { color: #faad14; }
+.lane-sync-row[data-state="ok"] .lane-sync-text { color: var(--green); }
+.btn-lane-sync-adopt {
+  background: rgba(255,98,0,0.85);
+  border: none;
+  border-radius: 14px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-lane-sync-adopt:active { opacity: 0.8; }
+
 /* ── 终点端主界面 — 浮动自动识别按钮 ─────────────────── */
 .fs-auto-pill {
   position: absolute;
