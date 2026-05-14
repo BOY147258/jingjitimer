@@ -1,5 +1,5 @@
-// v21 — fix admin link path for GitHub Pages
-const CACHE = 'jingjitimer-v21';
+// v22 — admin rewrite (localStorage, no backend) + results persistence + observer history replay
+const CACHE = 'jingjitimer-v22';
 
 const APP_SHELL = [
   './',

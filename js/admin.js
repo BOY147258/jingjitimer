@@ -1,54 +1,57 @@
-// Admin dashboard controller
-const BASE = '';
+/**
+ * 竞迹 — 成绩管理后台 (localStorage 版，无需后端)
+ * 成绩由计时端保存在 localStorage['jingjitimer-history'] 中
+ */
 
-// ── API helpers ──────────────────────────────────────────────────────────────
-async function api(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(BASE + path, opts);
-  return r.json();
-}
-const GET    = p => api('GET', p);
-const POST   = (p, b) => api('POST', p, b);
-const PUT    = (p, b) => api('PUT', p, b);
-const DELETE = p => api('DELETE', p);
+const STORAGE_KEY = 'jingjitimer-history';
 
-// ── Utilities ────────────────────────────────────────────────────────────────
+// ── 工具函数 ─────────────────────────────────────────────
 function msToDisplay(ms) {
-  if (ms == null) return '—';
-  const m = Math.floor(ms / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const c = Math.floor((ms % 1000) / 10);
-  return `${m}:${String(s).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
+  if (ms == null || ms < 0) return '—';
+  const m  = Math.floor(ms / 60000);
+  const s  = Math.floor((ms % 60000) / 1000);
+  const cs = Math.floor((ms % 1000) / 10);
+  return m > 0
+    ? `${m}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`
+    : `${s}.${String(cs).padStart(2,'0')}`;
 }
-
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── localStorage 读写 ────────────────────────────────────
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveHistory(arr) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+// ── Toast ────────────────────────────────────────────────
 let _toastTimer;
 function toast(msg, type = 'success') {
   const el = document.getElementById('toast');
+  if (!el) return;
   el.textContent = msg;
   el.className = `toast ${type}`;
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.classList.add('hidden'), 2800);
 }
 
-// ── Navigation ───────────────────────────────────────────────────────────────
+// ── 导航 ─────────────────────────────────────────────────
 const pages = {};
-document.querySelectorAll('.page').forEach(p => pages[p.id.replace('page-','')] = p);
-
-let currentPage = 'overview';
+document.querySelectorAll('.page').forEach(p => {
+  pages[p.id.replace('page-','')] = p;
+});
+let currentPage = 'results';
 
 document.querySelectorAll('.nav-link').forEach(a => {
   a.addEventListener('click', e => {
     e.preventDefault();
-    const page = a.dataset.page;
-    showPage(page);
+    showPage(a.dataset.page);
   });
 });
-
 function showPage(page) {
   currentPage = page;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -60,436 +63,223 @@ function showPage(page) {
   loaders[page]?.();
 }
 
-// ── Page loaders ─────────────────────────────────────────────────────────────
-const loaders = {
-  overview:  loadOverview,
-  meets:     loadMeets,
-  events:    loadEvents,
-  athletes:  loadAthletes,
-  results:   loadResults,
-  export:    loadExport,
-};
+// ── 筛选状态 ─────────────────────────────────────────────
+let filterRoom = '', filterDist = '', filterDate = '';
 
-// ── STATE ────────────────────────────────────────────────────────────────────
-let allMeets    = [];
-let allEvents   = [];
-let allAthletes = [];
-let allResults  = [];
+// ── 成绩页 ───────────────────────────────────────────────
+function loadResults() {
+  const history = loadHistory();
 
-// ── OVERVIEW ─────────────────────────────────────────────────────────────────
-async function loadOverview() {
-  const stats = await GET('/api/stats');
-  document.getElementById('st-meets').textContent    = stats.totalMeets;
-  document.getElementById('st-events').textContent   = stats.totalEvents;
-  document.getElementById('st-athletes').textContent = stats.totalAthletes;
-  document.getElementById('st-results').textContent  = stats.totalResults;
+  // 填充筛选下拉
+  const rooms = [...new Set(history.map(g => g.roomCode).filter(Boolean))].sort();
+  const dists = [...new Set(history.map(g => g.distance).filter(Boolean))].sort((a,b)=>a-b);
+  const dates = [...new Set(history.map(g => (g.date||'').slice(0,10)).filter(Boolean))].sort().reverse();
 
-  const tbody = document.querySelector('#best-table tbody');
-  tbody.innerHTML = '';
-  if (!stats.eventBests?.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无数据</td></tr>';
-    return;
-  }
-  stats.eventBests.forEach(ev => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${esc(ev.eventName)}</td>
-      <td class="time-cell">${msToDisplay(ev.best?.timeMs)}</td>
-      <td>${esc(ev.best?.athleteName || '—')}</td>
-      <td>${ev.count}</td>`;
-    tbody.appendChild(tr);
-  });
+  const selRoom = document.getElementById('filter-room');
+  const selDist = document.getElementById('filter-dist');
+  const selDate = document.getElementById('filter-date');
+
+  const prev = { room: selRoom.value, dist: selDist.value, date: selDate.value };
+
+  selRoom.innerHTML = '<option value="">— 全部房间 —</option>' +
+    rooms.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  selDist.innerHTML = '<option value="">— 全部距离 —</option>' +
+    dists.map(d => `<option value="${d}">${d} m</option>`).join('');
+  selDate.innerHTML = '<option value="">— 全部日期 —</option>' +
+    dates.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+
+  selRoom.value = prev.room;
+  selDist.value = prev.dist;
+  selDate.value = prev.date;
+
+  filterRoom = selRoom.value;
+  filterDist = selDist.value;
+  filterDate = selDate.value;
+
+  renderResults(history);
 }
 
-// ── MEETS ─────────────────────────────────────────────────────────────────────
-async function loadMeets() {
-  allMeets = await GET('/api/meets');
-  renderMeets();
-}
-
-function renderMeets() {
-  const tbody = document.querySelector('#meets-table tbody');
-  tbody.innerHTML = '';
-  if (!allMeets.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无赛事，点击右上角新建</td></tr>';
-    return;
-  }
-  allMeets.forEach(m => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${esc(m.name)}</strong>${m.notes ? `<br><small style="color:var(--muted)">${esc(m.notes)}</small>` : ''}</td>
-      <td>${esc(m.date)}</td>
-      <td>${esc(m.location)}</td>
-      <td><div class="action-btns">
-        <button class="btn-ghost btn-sm" onclick="editMeet(${m.id})">编辑</button>
-        <button class="btn-danger btn-sm" onclick="deleteMeet(${m.id})">删除</button>
-      </div></td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-let editingMeetId = null;
-document.getElementById('btn-add-meet').onclick = () => openMeetModal(null);
-document.getElementById('meet-cancel').onclick  = () => closeMeetModal();
-document.getElementById('meet-save').onclick    = saveMeet;
-
-function openMeetModal(meet) {
-  editingMeetId = meet?.id || null;
-  document.getElementById('meet-modal-title').textContent = meet ? '编辑赛事' : '新建赛事';
-  document.getElementById('meet-name').value     = meet?.name || '';
-  document.getElementById('meet-date').value     = meet?.date || new Date().toISOString().slice(0,10);
-  document.getElementById('meet-location').value = meet?.location || '';
-  document.getElementById('meet-notes').value    = meet?.notes || '';
-  document.getElementById('meet-modal').classList.remove('hidden');
-}
-function closeMeetModal() { document.getElementById('meet-modal').classList.add('hidden'); }
-
-async function saveMeet() {
-  const body = {
-    name:     document.getElementById('meet-name').value.trim(),
-    date:     document.getElementById('meet-date').value,
-    location: document.getElementById('meet-location').value.trim(),
-    notes:    document.getElementById('meet-notes').value.trim(),
-  };
-  if (!body.name) { toast('请填写赛事名称', 'error'); return; }
-  if (editingMeetId) {
-    await PUT(`/api/meets/${editingMeetId}`, body);
-    toast('赛事已更新');
-  } else {
-    await POST('/api/meets', body);
-    toast('赛事已创建');
-  }
-  closeMeetModal();
-  loadMeets();
-}
-
-window.editMeet = async (id) => {
-  const meet = allMeets.find(m => m.id === id);
-  if (meet) openMeetModal(meet);
-};
-window.deleteMeet = async (id) => {
-  if (!confirm('确认删除此赛事？')) return;
-  await DELETE(`/api/meets/${id}`);
-  toast('已删除');
-  loadMeets();
-};
-
-// ── EVENTS ───────────────────────────────────────────────────────────────────
-async function loadEvents() {
-  [allMeets, allEvents] = await Promise.all([GET('/api/meets'), GET('/api/events')]);
-  populateMeetSelect('event-meet-filter', allMeets, '— 选择赛事（全部）—');
-  renderEvents();
-}
-
-function populateMeetSelect(selectId, meets, placeholder = '— 选择赛事 —') {
-  const sel = document.getElementById(selectId);
-  const cur = sel.value;
-  sel.innerHTML = `<option value="">${placeholder}</option>` +
-    meets.map(m => `<option value="${m.id}" ${String(m.id) === cur ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
-}
-
-document.getElementById('event-meet-filter').onchange = renderEvents;
-document.getElementById('btn-add-event').onclick = () => openEventModal(null);
-document.getElementById('event-cancel').onclick  = () => closeEventModal();
-document.getElementById('event-save').onclick    = saveEvent;
-
-function renderEvents() {
-  const meetId = document.getElementById('event-meet-filter').value;
-  const filtered = meetId ? allEvents.filter(e => String(e.meetId) === meetId) : allEvents;
-  const tbody = document.querySelector('#events-table tbody');
-  tbody.innerHTML = '';
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无项目</td></tr>';
-    return;
-  }
-  filtered.forEach(ev => {
-    const meet = allMeets.find(m => m.id === ev.meetId);
-    tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${esc(ev.name)}</strong><br><small style="color:var(--muted)">${esc(meet?.name || '')}</small></td>
-      <td>${esc(ev.distance)}</td>
-      <td>${ev.laps}</td>
-      <td>${ev.totalRounds}</td>
-      <td>${ev.groupsPerRound}</td>
-      <td>${ev.advanceCount || '—'}</td>
-      <td><div class="action-btns">
-        <button class="btn-ghost btn-sm" onclick="editEvent(${ev.id})">编辑</button>
-        <button class="btn-danger btn-sm" onclick="deleteEvent(${ev.id})">删除</button>
-      </div></td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-let editingEventId = null;
-function openEventModal(ev) {
-  editingEventId = ev?.id || null;
-  document.getElementById('event-modal-title').textContent = ev ? '编辑项目' : '新建项目';
-  // populate meet select inside modal
-  const sel = document.getElementById('event-meetId');
-  sel.innerHTML = allMeets.map(m => `<option value="${m.id}" ${ev?.meetId===m.id?'selected':''}>${esc(m.name)}</option>`).join('');
-  document.getElementById('event-name').value     = ev?.name || '';
-  document.getElementById('event-distance').value = ev?.distance || '';
-  document.getElementById('event-laps').value     = ev?.laps || 1;
-  document.getElementById('event-rounds').value   = ev?.totalRounds || 1;
-  document.getElementById('event-groups').value   = ev?.groupsPerRound || 1;
-  document.getElementById('event-advance').value  = ev?.advanceCount || 0;
-  document.getElementById('event-gender').value   = ev?.gender || 'mixed';
-  document.getElementById('event-modal').classList.remove('hidden');
-}
-function closeEventModal() { document.getElementById('event-modal').classList.add('hidden'); }
-
-async function saveEvent() {
-  const body = {
-    meetId:         Number(document.getElementById('event-meetId').value),
-    name:           document.getElementById('event-name').value.trim(),
-    distance:       document.getElementById('event-distance').value.trim(),
-    laps:           Number(document.getElementById('event-laps').value),
-    totalRounds:    Number(document.getElementById('event-rounds').value),
-    groupsPerRound: Number(document.getElementById('event-groups').value),
-    advanceCount:   Number(document.getElementById('event-advance').value),
-    gender:         document.getElementById('event-gender').value,
-  };
-  if (!body.name || !body.meetId) { toast('请填写项目名称并选择赛事', 'error'); return; }
-  if (editingEventId) {
-    await PUT(`/api/events/${editingEventId}`, body);
-    toast('项目已更新');
-  } else {
-    await POST('/api/events', body);
-    toast('项目已创建');
-  }
-  closeEventModal();
-  loadEvents();
-}
-
-window.editEvent = (id) => { const ev = allEvents.find(e => e.id === id); if (ev) openEventModal(ev); };
-window.deleteEvent = async (id) => {
-  if (!confirm('确认删除此项目？')) return;
-  await DELETE(`/api/events/${id}`);
-  toast('已删除');
-  loadEvents();
-};
-
-// ── ATHLETES ─────────────────────────────────────────────────────────────────
-async function loadAthletes() {
-  allAthletes = await GET('/api/athletes');
-  renderAthletes(allAthletes);
-}
-
-function renderAthletes(list) {
-  const tbody = document.querySelector('#athletes-table tbody');
-  tbody.innerHTML = '';
-  if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无运动员</td></tr>';
-    return;
-  }
-  list.forEach(a => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${esc(a.name)}</strong></td>
-      <td>${esc(a.number)}</td>
-      <td>${esc(a.team)}</td>
-      <td>${a.gender === 'male' ? '男' : a.gender === 'female' ? '女' : '—'}</td>
-      <td><div class="action-btns">
-        <button class="btn-ghost btn-sm" onclick="editAthlete(${a.id})">编辑</button>
-        <button class="btn-danger btn-sm" onclick="deleteAthlete(${a.id})">删除</button>
-      </div></td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-let _searchTimer;
-document.getElementById('athlete-search').oninput = function() {
-  clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(async () => {
-    const q = this.value.trim();
-    if (!q) { renderAthletes(allAthletes); return; }
-    const res = await GET(`/api/athletes?q=${encodeURIComponent(q)}`);
-    renderAthletes(res);
-  }, 300);
-};
-
-let editingAthleteId = null;
-document.getElementById('btn-add-athlete').onclick = () => openAthleteModal(null);
-document.getElementById('ath-cancel').onclick = () => closeAthleteModal();
-document.getElementById('ath-save').onclick = saveAthlete;
-
-function openAthleteModal(a) {
-  editingAthleteId = a?.id || null;
-  document.getElementById('athlete-modal-title').textContent = a ? '编辑运动员' : '新增运动员';
-  document.getElementById('ath-name').value   = a?.name || '';
-  document.getElementById('ath-number').value = a?.number || '';
-  document.getElementById('ath-team').value   = a?.team || '';
-  document.getElementById('ath-gender').value = a?.gender || '';
-  document.getElementById('ath-dob').value    = a?.dob || '';
-  document.getElementById('athlete-modal').classList.remove('hidden');
-}
-function closeAthleteModal() { document.getElementById('athlete-modal').classList.add('hidden'); }
-
-async function saveAthlete() {
-  const body = {
-    name:   document.getElementById('ath-name').value.trim(),
-    number: document.getElementById('ath-number').value.trim(),
-    team:   document.getElementById('ath-team').value.trim(),
-    gender: document.getElementById('ath-gender').value,
-    dob:    document.getElementById('ath-dob').value,
-  };
-  if (!body.name) { toast('请填写姓名', 'error'); return; }
-  if (editingAthleteId) {
-    await PUT(`/api/athletes/${editingAthleteId}`, body);
-    toast('已更新');
-  } else {
-    await POST('/api/athletes', body);
-    toast('已添加');
-  }
-  closeAthleteModal();
-  loadAthletes();
-}
-
-window.editAthlete = (id) => { const a = allAthletes.find(x => x.id === id); if (a) openAthleteModal(a); };
-window.deleteAthlete = async (id) => {
-  if (!confirm('确认删除？')) return;
-  await DELETE(`/api/athletes/${id}`);
-  toast('已删除');
-  loadAthletes();
-};
-
-// ── RESULTS ───────────────────────────────────────────────────────────────────
-async function loadResults() {
-  [allMeets, allEvents] = await Promise.all([GET('/api/meets'), GET('/api/events')]);
-  populateMeetSelect('res-meet-filter', allMeets, '— 赛事 —');
-  populateMeetSelect('exp-meet', allMeets, '— 选择赛事 —');
-  populateMeetSelect('exp-event-meet', allMeets, '— 先选赛事 —');
-  renderResults();
-}
-
-document.getElementById('res-meet-filter').onchange = async function() {
-  const meetId = this.value;
-  const sel = document.getElementById('res-event-filter');
-  if (meetId) {
-    const evs = allEvents.filter(e => String(e.meetId) === meetId);
-    sel.innerHTML = '<option value="">— 项目 —</option>' +
-      evs.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  } else {
-    sel.innerHTML = '<option value="">— 项目 —</option>';
-  }
-  renderResults();
-};
-
-document.getElementById('res-event-filter').onchange = function() {
-  const eventId = this.value;
-  const ev = allEvents.find(e => String(e.id) === eventId);
-  const roundSel = document.getElementById('res-round-filter');
-  const groupSel = document.getElementById('res-group-filter');
-  if (ev) {
-    roundSel.innerHTML = '<option value="">— 轮次 —</option>' +
-      Array.from({length: ev.totalRounds}, (_,i) =>
-        `<option value="${i+1}">第${i+1}轮</option>`).join('');
-    groupSel.innerHTML = '<option value="">— 组别 —</option>' +
-      Array.from({length: ev.groupsPerRound}, (_,i) =>
-        `<option value="${i+1}">第${i+1}组</option>`).join('');
-  } else {
-    roundSel.innerHTML = '<option value="">— 轮次 —</option>';
-    groupSel.innerHTML = '<option value="">— 组别 —</option>';
-  }
-  renderResults();
-};
-
-document.getElementById('res-round-filter').onchange = renderResults;
-document.getElementById('res-group-filter').onchange = renderResults;
-
-document.getElementById('btn-rank').onclick = async () => {
-  const eventId = document.getElementById('res-event-filter').value;
-  if (!eventId) { toast('请先选择项目', 'error'); return; }
-  const round = document.getElementById('res-round-filter').value || null;
-  const group = document.getElementById('res-group-filter').value || null;
-  const r = await POST('/api/rank', { eventId: Number(eventId), round: round ? Number(round) : null, group: group ? Number(group) : null });
-  toast(`已对 ${r.ranked} 条成绩排名`);
-  renderResults();
-};
-
-async function renderResults() {
-  const meetId  = document.getElementById('res-meet-filter').value;
-  const eventId = document.getElementById('res-event-filter').value;
-  const round   = document.getElementById('res-round-filter').value;
-  const group   = document.getElementById('res-group-filter').value;
-
-  let qs = '';
-  if (eventId) qs = `?eventId=${eventId}`;
-  else if (meetId) qs = `?meetId=${meetId}`;
-
-  allResults = await GET(`/api/results${qs}`);
-
-  let filtered = allResults;
-  if (round) filtered = filtered.filter(r => String(r.round) === round);
-  if (group) filtered = filtered.filter(r => String(r.group) === group);
-  filtered.sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || (a.timeMs ?? Infinity) - (b.timeMs ?? Infinity));
-
-  const evMap = Object.fromEntries(allEvents.map(e => [e.id, e]));
+function renderResults(history) {
   const tbody = document.querySelector('#results-table tbody');
-  tbody.innerHTML = '';
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无成绩记录</td></tr>';
+  if (!tbody) return;
+
+  // 应用筛选
+  let groups = history.filter(g => {
+    if (filterRoom && g.roomCode !== filterRoom) return false;
+    if (filterDist && String(g.distance) !== String(filterDist)) return false;
+    if (filterDate && !(g.date||'').startsWith(filterDate)) return false;
+    return true;
+  });
+
+  if (!groups.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无成绩记录</td></tr>';
+    document.getElementById('result-count').textContent = '0 条成绩';
     return;
   }
-  filtered.forEach(r => {
-    const ev = evMap[r.eventId] || {};
-    const laps = (r.lapTimes || []).map(msToDisplay).join(' | ');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="rank-cell">${r.rank ?? '—'}</td>
-      <td>${esc(r.athleteName)}</td>
-      <td>${esc(r.number)}</td>
-      <td>${esc(r.team)}</td>
-      <td>${r.laneIndex != null ? r.laneIndex + 1 : '—'}</td>
-      <td class="time-cell">${msToDisplay(r.timeMs)}</td>
-      <td class="lap-cell">${laps || '—'}</td>
-      <td class="${r.qualified ? 'qualified-yes' : 'qualified-no'}">${r.qualified ? '✓ 晋级' : '—'}</td>
-      <td>第${r.round}轮 第${r.group}组</td>
-      <td><button class="btn-danger btn-sm" onclick="deleteResult(${r.id})">删除</button></td>`;
-    tbody.appendChild(tr);
+
+  // 按日期倒序、再按轮次/组别
+  groups.sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+
+  const medals = ['🥇','🥈','🥉'];
+  const rows = [];
+  let totalCount = 0;
+
+  groups.forEach(g => {
+    const sorted = [...(g.results||[])].sort((a,b) => {
+      if (a.isDNF && !b.isDNF) return 1;
+      if (!a.isDNF && b.isDNF) return -1;
+      return (a.raceTime||Infinity) - (b.raceTime||Infinity);
+    });
+
+    sorted.forEach((r, idx) => {
+      totalCount++;
+      const rank = r.isDNF ? 'DNF' : (medals[idx] || `${idx+1}`);
+      rows.push(`<tr class="${idx===0?'row-gold':idx===1?'row-silver':idx===2?'row-bronze':''}">
+        <td>${rank}</td>
+        <td class="time-cell">${r.isDNF ? 'DNF' : msToDisplay(r.raceTime)}</td>
+        <td>${esc(r.name||`${r.laneIdx!=null?r.laneIdx+1:'?'}道`)}</td>
+        <td>${r.laneIdx!=null?r.laneIdx+1:'—'}道</td>
+        <td>${esc(g.distance)}m${g.laps>1?` × ${g.laps}圈`:''}</td>
+        <td>第${g.round||1}轮 第${g.group||1}组</td>
+        <td>${esc(g.roomCode||'—')}</td>
+        <td>${esc((g.date||'').slice(0,10))}</td>
+        <td><button class="btn-danger btn-sm" onclick="deleteGroup('${g.id}')">删除</button></td>
+      </tr>`);
+    });
+
+    // 组间隔行
+    rows.push(`<tr class="group-sep"><td colspan="9">${esc(g.raceName||'比赛')} · 第${g.round||1}轮第${g.group||1}组 · ${esc(g.distance)}m · 房间 ${esc(g.roomCode||'—')} · ${esc((g.date||'').slice(0,10))}</td></tr>`);
   });
+
+  tbody.innerHTML = rows.join('');
+  document.getElementById('result-count').textContent = `${totalCount} 条成绩`;
 }
 
-window.deleteResult = async (id) => {
-  if (!confirm('确认删除此成绩记录？')) return;
-  await DELETE(`/api/results/${id}`);
-  toast('已删除');
-  renderResults();
-};
+// ── 删除一组 ─────────────────────────────────────────────
+function deleteGroup(id) {
+  if (!confirm('确认删除这组成绩？')) return;
+  let history = loadHistory();
+  history = history.filter(g => g.id !== id);
+  saveHistory(history);
+  loadResults();
+  toast('已删除', 'warn');
+}
+window.deleteGroup = deleteGroup;
 
-// ── EXPORT ────────────────────────────────────────────────────────────────────
-async function loadExport() {
-  allMeets  = await GET('/api/meets');
-  allEvents = await GET('/api/events');
-  populateMeetSelect('exp-meet', allMeets, '— 选择赛事 —');
-  populateMeetSelect('exp-event-meet', allMeets, '— 先选赛事 —');
+// ── 概览页 ───────────────────────────────────────────────
+function loadOverview() {
+  const history = loadHistory();
+  const totalGroups   = history.length;
+  const totalResults  = history.reduce((s,g) => s + (g.results||[]).length, 0);
+  const totalRooms    = new Set(history.map(g=>g.roomCode).filter(Boolean)).size;
+  const totalDists    = new Set(history.map(g=>g.distance).filter(Boolean)).size;
+
+  document.getElementById('st-groups').textContent   = totalGroups;
+  document.getElementById('st-results').textContent  = totalResults;
+  document.getElementById('st-rooms').textContent    = totalRooms;
+  document.getElementById('st-dists').textContent    = totalDists;
+
+  // 最近10组
+  const tbody = document.querySelector('#recent-table tbody');
+  if (!tbody) return;
+  const recent = [...history].sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).slice(0,10);
+  tbody.innerHTML = recent.map(g => {
+    const best = (g.results||[]).filter(r=>!r.isDNF).sort((a,b)=>a.raceTime-b.raceTime)[0];
+    return `<tr>
+      <td>${esc((g.date||'').slice(0,10))}</td>
+      <td>${esc(g.raceName||'比赛')}</td>
+      <td>${esc(g.distance)}m</td>
+      <td>第${g.round||1}轮 第${g.group||1}组</td>
+      <td class="time-cell">${best ? msToDisplay(best.raceTime) : '—'}</td>
+      <td>${esc(best?.name||'—')}</td>
+      <td>${esc(g.roomCode||'—')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
 }
 
-document.getElementById('exp-event-meet').onchange = function() {
-  const meetId = this.value;
-  const sel = document.getElementById('exp-event');
-  if (meetId) {
-    const evs = allEvents.filter(e => String(e.meetId) === meetId);
-    sel.innerHTML = '<option value="">— 选择项目 —</option>' +
-      evs.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  } else {
-    sel.innerHTML = '<option value="">— 选择项目 —</option>';
+// ── 导出页 ───────────────────────────────────────────────
+function loadExport() {
+  const history = loadHistory();
+  const rooms = [...new Set(history.map(g=>g.roomCode).filter(Boolean))].sort();
+  const selExp = document.getElementById('exp-room');
+  if (selExp) {
+    selExp.innerHTML = '<option value="">— 全部 —</option>' +
+      rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
   }
+}
+
+function exportCSV(groups) {
+  const headers = ['日期','房间','比赛名称','距离','轮次','组别','排名','姓名','道次','成绩(秒)','成绩','是否DNF'];
+  const rows = [];
+  groups.forEach(g => {
+    const sorted = [...(g.results||[])].sort((a,b)=>(a.raceTime||Infinity)-(b.raceTime||Infinity));
+    sorted.forEach((r,i) => {
+      rows.push([
+        (g.date||'').slice(0,10),
+        g.roomCode||'',
+        g.raceName||'比赛',
+        g.distance,
+        g.round||1,
+        g.group||1,
+        r.isDNF ? 'DNF' : i+1,
+        r.name||`${r.laneIdx!=null?r.laneIdx+1:'?'}道`,
+        r.laneIdx!=null?r.laneIdx+1:'',
+        r.isDNF ? '' : ((r.raceTime||0)/1000).toFixed(2),
+        r.isDNF ? 'DNF' : msToDisplay(r.raceTime),
+        r.isDNF ? '是' : '否',
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+    });
+  });
+
+  const csv = '﻿' + [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a'); a.href = url;
+  a.download = `竞迹成绩_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── 清除所有 ──────────────────────────────────────────────
+document.getElementById('btn-clear-all')?.addEventListener('click', () => {
+  if (!confirm('确认清除所有历史成绩？此操作不可撤销')) return;
+  saveHistory([]);
+  loadResults();
+  toast('已清除所有成绩', 'warn');
+});
+
+// ── 筛选事件 ─────────────────────────────────────────────
+document.getElementById('filter-room')?.addEventListener('change', e => { filterRoom = e.target.value; renderResults(loadHistory()); });
+document.getElementById('filter-dist')?.addEventListener('change', e => { filterDist = e.target.value; renderResults(loadHistory()); });
+document.getElementById('filter-date')?.addEventListener('change', e => { filterDate = e.target.value; renderResults(loadHistory()); });
+document.getElementById('btn-clear-filter')?.addEventListener('click', () => {
+  filterRoom = filterDist = filterDate = '';
+  loadResults();
+});
+
+// ── 导出按钮 ─────────────────────────────────────────────
+document.getElementById('btn-exp-all')?.addEventListener('click', () => {
+  exportCSV(loadHistory());
+  toast('已导出全部成绩');
+});
+document.getElementById('btn-exp-room')?.addEventListener('click', () => {
+  const room = document.getElementById('exp-room')?.value;
+  const data = room ? loadHistory().filter(g=>g.roomCode===room) : loadHistory();
+  exportCSV(data);
+  toast(`已导出${room?`房间 ${room} 的`:'全部'}成绩`);
+});
+
+// ── 刷新按钮 ─────────────────────────────────────────────
+document.getElementById('btn-refresh')?.addEventListener('click', () => {
+  loaders[currentPage]?.();
+  toast('已刷新');
+});
+
+// ── page loaders map ─────────────────────────────────────
+const loaders = {
+  overview: loadOverview,
+  results:  loadResults,
+  export:   loadExport,
 };
 
-document.getElementById('btn-exp-meet').onclick = () => {
-  const id = document.getElementById('exp-meet').value;
-  if (!id) { toast('请选择赛事', 'error'); return; }
-  window.location.href = `/api/export/csv?meetId=${id}`;
-};
-document.getElementById('btn-exp-event').onclick = () => {
-  const id = document.getElementById('exp-event').value;
-  if (!id) { toast('请选择项目', 'error'); return; }
-  window.location.href = `/api/export/csv?eventId=${id}`;
-};
-document.getElementById('btn-exp-all').onclick = () => {
-  window.location.href = `/api/export/csv`;
-};
-
-// ── INIT ──────────────────────────────────────────────────────────────────────
-loadOverview();
+// ── 初始化 ───────────────────────────────────────────────
+showPage('results');

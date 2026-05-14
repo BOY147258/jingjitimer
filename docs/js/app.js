@@ -38,6 +38,8 @@ const state = {
   laneCrossings:       {},
   laneLastCrossingTime:{},
   lanesDone:           0,
+  // session history: all completed groups this session (used for observer catch-up)
+  sessionHistory: [],
   // lane sync between start ↔ finish device
   finishDeviceLanes: null,  // lane count last reported by finish device (null = not yet known)
   // finish device: auto-detected lane count is the authority — start device cannot override
@@ -382,8 +384,15 @@ function registerSyncEvents() {
       if (DOM.roomStatus) DOM.roomStatus.textContent = `✅ 已连接，终点端 ${fc} 个在线`;
       // Push current config immediately so finish device syncs right away
       if (state.role === 'start') setTimeout(broadcastConfig, 300);
+    } else if (e.role === 'observer') {
+      showToast('成绩记录端已上线', 'success');
+      updateConnStatus(true);
+      // 补发本场已完成的所有组成绩，让晚加入的记录端也能看到历史
+      if (state.role === 'start' && state.sessionHistory?.length) {
+        setTimeout(() => sync.send('RACE_HISTORY', { groups: state.sessionHistory }), 400);
+      }
     } else {
-      showToast('发令端已上线', 'success');
+      showToast('对端已上线', 'success');
       updateConnStatus(true);
     }
     updateFinishBadge();
@@ -458,6 +467,44 @@ function registerSyncEvents() {
     if (state.role === 'observer') {
       state.obsResults.push({ ...e, isDNF: true });
       obsRenderTable();
+    }
+  });
+
+  // ── 成绩历史补发（晚加入的记录端接收历史）──────────────
+  sync.on('RACE_HISTORY', e => {
+    if (state.role !== 'observer') return;
+    if (!Array.isArray(e.groups)) return;
+    // Prepend historical groups, avoiding duplicates
+    const existingIds = new Set(state.obsHistory.map(g => g.id));
+    e.groups.forEach(g => {
+      if (!existingIds.has(g.id)) {
+        state.obsHistory.push({
+          id:      g.id,
+          round:   g.round,
+          group:   g.group,
+          dist:    g.distance,
+          results: g.results || [],
+        });
+        existingIds.add(g.id);
+      }
+    });
+    state.obsHistory.sort((a, b) => (b.id || 0) - (a.id || 0));
+    obsRenderHistory();
+    showToast(`📋 已接收 ${e.groups.length} 组历史成绩`, 'success');
+  });
+
+  sync.on('RACE_GROUP_RESULT', e => {
+    if (state.role !== 'observer') return;
+    const existingIds = new Set(state.obsHistory.map(g => g.id));
+    if (!existingIds.has(e.id)) {
+      state.obsHistory.unshift({
+        id:      e.id,
+        round:   e.round,
+        group:   e.group,
+        dist:    e.distance,
+        results: e.results || [],
+      });
+      obsRenderHistory();
     }
   });
 
@@ -1299,6 +1346,9 @@ async function endRace() {
 
   const race = saveRace(blob);
   autoSaveToBackend(race);
+
+  // ── 保存成绩到 localStorage & session history ──────────
+  saveGroupToHistory(race);
   showToast('✅ 成绩已保存', 'success');
 
   // Show inline race-end actions in the race tab
@@ -1912,6 +1962,47 @@ function saveRace(blob) {
 }
 function getHistory()  { try { return JSON.parse(localStorage.getItem('race-history') || '[]'); } catch { return []; } }
 function loadHistory() { renderHistory(getHistory()); }
+
+// ── 保存成绩到管理后台 localStorage & session history ───
+function saveGroupToHistory(race) {
+  const ADMIN_KEY = 'jingjitimer-history';
+  const group = {
+    id:       String(race.id || Date.now()),
+    date:     new Date().toISOString(),
+    roomCode: state.roomCode || '',
+    raceName: race.name || '田径比赛',
+    distance: state.distance,
+    laps:     state.lapCount,
+    round:    race.round || state.currentRound,
+    group:    race.group || state.currentGroup,
+    results:  state.lanes
+      .filter(l => l.time != null || l.dnf)
+      .map(l => ({
+        laneIdx:  state.lanes.indexOf(l),
+        name:     l.name || `${state.lanes.indexOf(l)+1}道`,
+        raceTime: l.time,
+        isDNF:    !!l.dnf,
+        rank:     l.rank,
+      })),
+  };
+
+  // Save to admin localStorage
+  try {
+    const existing = JSON.parse(localStorage.getItem(ADMIN_KEY) || '[]');
+    existing.unshift(group);
+    if (existing.length > 200) existing.length = 200;  // cap at 200 groups
+    localStorage.setItem(ADMIN_KEY, JSON.stringify(existing));
+  } catch (e) { console.warn('Failed to save group history', e); }
+
+  // Add to session history (for live observer catch-up)
+  state.sessionHistory.unshift(group);
+  if (state.sessionHistory.length > 50) state.sessionHistory.length = 50;
+
+  // Broadcast group result to any connected observers
+  if (state.role === 'start' && sync.connected) {
+    sync.send('RACE_GROUP_RESULT', group);
+  }
+}
 
 function renderHistory(history) {
   if (!history.length) { DOM.historyList.innerHTML = '<p class="hint-text">暂无历史成绩</p>'; return; }
