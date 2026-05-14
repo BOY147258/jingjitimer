@@ -6,6 +6,41 @@
 <title>竞迹 · 成绩管理</title>
 <link rel="stylesheet" href="css/admin.css">
 <style>
+/* ── 顶部返回栏（手机端也能看到）─────────────────────── */
+.topbar-back {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  background: #12121e;
+  border-bottom: 1px solid #2a2a44;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+.topbar-back a {
+  background: rgba(255,98,0,0.15);
+  border: 1px solid rgba(255,98,0,0.4);
+  color: #ff6200;
+  text-decoration: none;
+  padding: 7px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.topbar-back .tb-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0f2f5;
+}
+@media (max-width: 768px) {
+  .topbar-back { display: flex; }
+  .sidebar { display: none; }
+  .content { margin-left: 0 !important; padding: 16px !important; }
+}
+
 /* ── 补充样式 ── */
 .filter-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
 .filter-bar select { background:#1a2035; border:1px solid rgba(255,255,255,.12); color:#f0f2f5; padding:6px 10px; border-radius:8px; font-size:13px; }
@@ -33,21 +68,39 @@
 </style>
 </head>
 <body>
+
+<!-- ── 手机端顶部导航栏（桌面端隐藏，手机端显示）── -->
+<div class="topbar-back">
+  <a href="index.html">← 返回计时端</a>
+  <span class="tb-title">📊 成绩管理</span>
+</div>
+
 <nav class="sidebar">
   <div class="brand">
     <span class="brand-icon">⚡</span>
     <div><div class="brand-name">竞迹</div><div class="brand-sub">成绩管理</div></div>
   </div>
+
+  <!-- 侧栏顶部：明显的返回按钮 -->
+  <a href="index.html" style="
+    display:block; margin:12px 10px 4px;
+    background:rgba(255,98,0,0.15); border:1px solid rgba(255,98,0,0.4);
+    color:#ff6200; text-decoration:none; text-align:center;
+    padding:9px 0; border-radius:10px; font-size:13px; font-weight:700;
+    letter-spacing:0.3px; transition:background .15s;">
+    ← 返回计时端
+  </a>
+
   <ul class="nav-list">
     <li><a href="#" data-page="overview" class="nav-link">📊 概览</a></li>
     <li><a href="#" data-page="results"  class="nav-link active">🏅 成绩查询</a></li>
     <li><a href="#" data-page="export"   class="nav-link">📤 导出</a></li>
   </ul>
-  <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);">
+
+  <div style="padding:10px 10px 12px; border-top:1px solid #2a2a44;">
     <button class="btn-ghost" id="btn-refresh" style="width:100%;margin-bottom:8px">🔄 刷新数据</button>
-    <button class="btn-danger" id="btn-clear-all" style="width:100%;border-radius:8px;padding:8px">🗑️ 清除所有成绩</button>
+    <button class="btn-danger" id="btn-clear-all" style="width:100%;border-radius:8px;padding:8px;font-size:12px">🗑️ 清除所有成绩</button>
   </div>
-  <a href="index.html" class="sidebar-bottom" style="margin-top:12px">← 返回计时端</a>
 </nav>
 
 <main class="content">

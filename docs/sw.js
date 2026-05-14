@@ -1,5 +1,5 @@
-// v22 — admin rewrite (localStorage, no backend) + results persistence + observer history replay
-const CACHE = 'jingjitimer-v22';
+// v23 — admin back button (mobile topbar + sidebar) + admin-link label update
+const CACHE = 'jingjitimer-v23';
 
 const APP_SHELL = [
   './',
