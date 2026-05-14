@@ -1,5 +1,5 @@
-// v24 — multi-lap grace period fix + cooldown fix + lane count authority fix
-const CACHE = 'jingjitimer-v24';
+// v25 — fix grace period: use distance/lapCount not trackLength (was blocking first lap)
+const CACHE = 'jingjitimer-v25';
 
 const APP_SHELL = [
   './',
