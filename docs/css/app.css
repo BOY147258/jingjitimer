@@ -1513,6 +1513,51 @@ input[type="text"]:focus { border-color: var(--accent); }
 }
 .fs-end-actions .btn { flex: 1; }
 
+/* ── Per-lane status bar (finish device, shown during race) ── */
+.fs-lane-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  gap: 3px;
+  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 6px);
+  background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%);
+  z-index: 15;
+  pointer-events: none;
+}
+.fs-lane-cell {
+  flex: 1;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 5px 2px 4px;
+  text-align: center;
+  transition: background 0.4s, border-color 0.4s;
+  min-width: 0;
+}
+.fs-lane-cell.done {
+  background: rgba(0,200,100,0.25);
+  border-color: rgba(0,230,118,0.5);
+}
+.fs-lane-cell-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.2;
+}
+.fs-lane-cell-status {
+  font-size: 10px;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.3;
+}
+.fs-lane-cell.done .fs-lane-cell-status {
+  color: #00e676;
+}
+.fs-lane-cell-time {
+  font-weight: 700;
+  font-size: 10px;
+  display: block;
+}
+
 /* Settings slide-up panel */
 .fs-settings-panel {
   position: absolute;

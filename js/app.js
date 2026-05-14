@@ -695,6 +695,21 @@ function setupFinishCamera() {
   detector.init(DOM.finishVideoFs, DOM.finishCanvasFs, state.laneCount);
   detector.bindDrag(DOM.finishCanvasFs);
 
+  // ── Auto-detect lanes when the first video frame is ready ──────────────
+  const tryAutoDetect = () => {
+    if (state.raceStarted) return;   // don't disturb an active race
+    const result = detector.autoDetectLanes(8);
+    if (result) {
+      state.laneCount = result.lanes;
+      showToast(`📐 自动识别到 ${result.lanes} 条跑道`, 'success');
+      updateLaneStatusBar();
+    }
+  };
+  // First attempt after metadata loads (gives video dimensions)
+  DOM.finishVideoFs.addEventListener('loadedmetadata', () => setTimeout(tryAutoDetect, 800), { once: true });
+  // Second attempt after first paint (frame data available)
+  DOM.finishVideoFs.addEventListener('canplay', () => setTimeout(tryAutoDetect, 1500), { once: true });
+
   // Preview monitoring — no crossing callbacks until race starts
   detector.start(null, (level) => {
     const pct = Math.min(100, level * 100);
@@ -1379,6 +1394,8 @@ function onFinishDeviceRaceStart(event) {
   state.laneCrossings = {};
   state.laneLastCrossingTime = {};
   state.lanesDone = 0;
+  detector.resetLaneDone();          // clear per-lane locks from previous race
+  updateLaneStatusBar();             // reset status bar to all-waiting
 
   // Hide end overlay immediately if still visible from previous group
   if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
@@ -1422,6 +1439,7 @@ function onFinishDeviceRaceStart(event) {
 
   if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '🏃 比赛进行中';
   if (DOM.fsConnDot) DOM.fsConnDot.classList.add('connected');
+  updateLaneStatusBar();   // show lane status bar with all lanes waiting
   showToast('⚡ 收到发令信号，计时开始！', 'success');
   if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 }
@@ -1470,6 +1488,9 @@ function handleFinishCrossing(laneIdx, perfTs) {
     `${laneName}  ${PrecisionTimer.formatFull(raceTime)}`);
   state.lanesDone++;
   const rank = state.lanesDone;
+  // Permanently lock this lane — no more triggers until next race
+  detector.setLaneDone(laneIdx, PrecisionTimer.formatFull(raceTime));
+  updateLaneStatusBar();
 
   const crossing = { laneIdx, raceTime, videoOffset, rank, name: laneName, perfTs, photo: photoDataUrl, paceStr };
   state.crossings.push(crossing);
@@ -1553,6 +1574,7 @@ async function onFinishDeviceRaceEnd() {
   }
 
   if (DOM.fsEnd) DOM.fsEnd.classList.remove('hidden');
+  $('fs-lane-bar')?.classList.add('hidden');   // hide status bar — end overlay takes over
   beep(880, 400);
   showToast('✅ 比赛结束', 'success');
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -2180,12 +2202,13 @@ function attachEventListeners() {
     if (e.target.id === 'guide-overlay') closeGuide();
   });
 
-  // Auto-detect lanes from current video frame
+  // Auto-detect lanes from current video frame (manual button)
   $('btn-fs-auto-lanes')?.addEventListener('click', () => {
     const result = detector.autoDetectLanes(8);
     if (result) {
       state.laneCount = result.lanes;
       showToast(`自动识别到 ${result.lanes} 条道次`, 'success');
+      updateLaneStatusBar();
     } else {
       showToast('识别失败，请确保跑道白线清晰可见，或手动调整', 'warning');
     }
@@ -2195,8 +2218,43 @@ function attachEventListeners() {
   const resetLaneDividers = () => {
     detector._resetDividers(state.laneCount);
     showToast('道次分界线已重置', 'success');
+    updateLaneStatusBar();
   };
   $('btn-fs-reset-lanes')?.addEventListener('click', resetLaneDividers);
+}
+
+// ── Lane status bar (finish device) ────────────────────
+function updateLaneStatusBar() {
+  const bar = $('fs-lane-bar');
+  if (!bar) return;
+
+  const n = state.laneCount || 4;
+  bar.innerHTML = '';
+
+  for (let i = 0; i < n; i++) {
+    const done     = detector._laneDone?.has(i);
+    const timeLabel= detector._laneFinishLabel?.[i];
+    const lapsDone = state.laneCrossings?.[i] ?? 0;
+    const rank     = done
+      ? (state.crossings?.find(c => c.laneIdx === i)?.rank ?? '')
+      : '';
+
+    const cell = document.createElement('div');
+    cell.className = `fs-lane-cell${done ? ' done' : ''}`;
+    cell.id = `fs-lane-cell-${i}`;
+
+    const rankMedal = rank ? (['🥇','🥈','🥉'][rank - 1] || `#${rank}`) : '';
+    cell.innerHTML = `
+      <div class="fs-lane-cell-num">${i + 1}道</div>
+      <div class="fs-lane-cell-status">
+        ${done
+          ? `${rankMedal} <span class="fs-lane-cell-time">${timeLabel || ''}</span>`
+          : (state.raceStarted ? '⏳' : '—')}
+      </div>`;
+    bar.appendChild(cell);
+  }
+
+  bar.classList.toggle('hidden', !state.raceStarted && !state.raceFinished);
 }
 
 // ── Service Worker ─────────────────────────────────────

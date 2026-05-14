@@ -23,6 +23,24 @@ export class FinishLineDetector {
     // Analysis canvas: narrow strip centered on finish line (wider = more robust)
     this._W = 32;
     this._H = 90;
+    // Lanes permanently locked after first crossing (cleared on race reset)
+    this._laneDone     = new Set();
+    // Optional per-lane finish time strings for overlay display
+    this._laneFinishLabel = {};
+  }
+
+  // Permanently lock a lane after its athlete crosses. Pass optional display label (e.g. "13.24").
+  setLaneDone(laneIdx, label = '✓') {
+    this._laneDone.add(laneIdx);
+    this._cooldowns[laneIdx] = true;   // immediate suppression
+    this._laneFinishLabel[laneIdx] = label;
+  }
+
+  // Clear all locks — call at race start / reset.
+  resetLaneDone() {
+    this._laneDone.clear();
+    this._laneFinishLabel = {};
+    this._cooldowns = new Array(this._laneCount).fill(false);
   }
 
   get threshold()  { return this._threshold; }
@@ -173,7 +191,10 @@ export class FinishLineDetector {
 
       this._cooldowns[laneIdx] = true;
       this.onCrossing?.(laneIdx, ts);
-      setTimeout(() => { this._cooldowns[laneIdx] = false; }, 1500);
+      // Reset cooldown after 1.5 s — but only if the lane isn't permanently locked
+      setTimeout(() => {
+        if (!this._laneDone.has(laneIdx)) this._cooldowns[laneIdx] = false;
+      }, 1500);
     });
   }
 
@@ -357,18 +378,41 @@ export class FinishLineDetector {
       const topY    = lane === 0 ? 0 : this._laneDividers[lane - 1] * dH;
       const bottomY = lane === this._laneCount - 1 ? dH : this._laneDividers[lane] * dH;
       const midY    = (topY + bottomY) / 2;
+      const done    = this._laneDone.has(lane);
 
-      // Pill background
-      const label  = `${lane + 1}道`;
-      const lw     = ctx.measureText(label).width + 10 * dpr;
-      const lh     = 16 * dpr;
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      // Tint done lanes with a soft green strip
+      if (done) {
+        ctx.fillStyle = 'rgba(0,230,118,0.08)';
+        ctx.fillRect(0, topY, dW, bottomY - topY);
+      }
+
+      // Lane number pill
+      const laneLabel = `${lane + 1}道`;
+      const lw = ctx.measureText(laneLabel).width + 10 * dpr;
+      const lh = 16 * dpr;
+      ctx.fillStyle = done ? 'rgba(0,180,90,0.75)' : 'rgba(0,0,0,0.5)';
       ctx.beginPath();
       ctx.roundRect(4 * dpr, midY - lh / 2, lw, lh, 4 * dpr);
       ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(laneLabel, 9 * dpr, midY);
 
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillText(label, 9 * dpr, midY);
+      // If done, show finish time on the right side of the lane
+      if (done && this._laneFinishLabel[lane]) {
+        const timeLabel = this._laneFinishLabel[lane];
+        ctx.textAlign = 'right';
+        ctx.font = `bold ${Math.round(13 * dpr)}px -apple-system,sans-serif`;
+        const tw = ctx.measureText(timeLabel).width + 14 * dpr;
+        const th = 20 * dpr;
+        ctx.fillStyle = 'rgba(0,140,70,0.8)';
+        ctx.beginPath();
+        ctx.roundRect(dW - tw - 6 * dpr, midY - th / 2, tw, th, 5 * dpr);
+        ctx.fill();
+        ctx.fillStyle = '#00ff88';
+        ctx.fillText(timeLabel, dW - 13 * dpr, midY);
+        ctx.textAlign = 'left';
+        ctx.font = `bold ${Math.round(11 * dpr)}px -apple-system,sans-serif`;
+      }
     }
 
     ctx.textBaseline = 'alphabetic';
