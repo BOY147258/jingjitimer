@@ -1,5 +1,5 @@
-// v20 — finish device is lane-count authority; RACE_CONFIG cannot override auto-detected lanes
-const CACHE = 'jingjitimer-v20';
+// v21 — fix admin link path for GitHub Pages
+const CACHE = 'jingjitimer-v21';
 
 const APP_SHELL = [
   './',
