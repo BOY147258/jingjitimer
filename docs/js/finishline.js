@@ -330,25 +330,45 @@ export class FinishLineDetector {
     ctx.restore();
   }
 
-  // Capture current video frame as data URL (called at crossing moment)
-  captureFrame(width = 320, height = 180) {
+  // Capture current video frame + overlay as data URL (called at crossing moment)
+  captureFrame(width = 640, height = 360, label = null) {
     if (!this._video || this._video.readyState < 2) return null;
     try {
-      const c   = document.createElement('canvas');
-      c.width   = width;
-      c.height  = height;
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
       const ctx = c.getContext('2d');
       ctx.drawImage(this._video, 0, 0, width, height);
 
-      // Draw finish line marker on the capture
+      // Draw lane dividers (white dashed horizontal lines)
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([6, 4]);
+      for (const d of this._laneDividers) {
+        const y = Math.round(d * height);
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Draw finish line (red dashed vertical)
       const lx = Math.round(this._linePos * width);
-      ctx.strokeStyle = 'rgba(255,23,68,0.85)';
-      ctx.lineWidth   = 2;
-      ctx.setLineDash([6, 3]);
+      ctx.strokeStyle = 'rgba(255,23,68,0.95)';
+      ctx.lineWidth   = 2.5;
+      ctx.setLineDash([10, 5]);
       ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, height); ctx.stroke();
       ctx.setLineDash([]);
 
-      return c.toDataURL('image/jpeg', 0.7);
+      // Draw label bar (name + time) at bottom
+      if (label) {
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fillRect(0, height - 36, width, 36);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 17px -apple-system, "PingFang SC", sans-serif';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, 10, height - 8);
+        ctx.textBaseline = 'alphabetic';
+      }
+
+      return c.toDataURL('image/jpeg', 0.85);
     } catch { return null; }
   }
 

@@ -1375,9 +1375,9 @@ function onFinishDeviceRaceStart(event) {
 
   beep(660, 200);
 
-  // Start recording
+  // Start composite recording (video + finish-line overlay)
   if (state.camGranted && recorder.hasVideo) {
-    recorder.start();
+    recorder.startComposite(DOM.finishVideoFs, DOM.finishCanvasFs);
     DOM.fsRecDot?.classList.remove('hidden');
   }
 
@@ -1455,7 +1455,8 @@ function handleFinishCrossing(laneIdx, perfTs) {
   }
 
   // Final crossing — capture frame + record finish
-  const photoDataUrl = detector.captureFrame();
+  const photoDataUrl = detector.captureFrame(640, 360,
+    `${laneName}  ${PrecisionTimer.formatFull(raceTime)}`);
   state.lanesDone++;
   const rank = state.lanesDone;
 
@@ -1525,17 +1526,19 @@ async function onFinishDeviceRaceEnd() {
   if (recorder.recording) blob = await recorder.stop();
   if (blob) state.finishRecorderBlob = blob;
 
-  // Build end-of-race result list
+  // Build end-of-race result list with crossing photos
   if (DOM.fsEndList) {
     const medals = ['🥇','🥈','🥉'];
-    DOM.fsEndList.innerHTML = state.crossings
-      .map(c => `
-        <div class="fs-end-row">
+    const sorted = [...state.crossings].sort((a, b) => a.rank - b.rank);
+    DOM.fsEndList.innerHTML = sorted.map(c => `
+      <div class="fs-end-row">
+        ${c.photo ? `<img class="fs-end-photo" src="${c.photo}" alt="${c.name}冲线">` : ''}
+        <div class="fs-end-info">
           <span class="fs-end-rank">${medals[c.rank-1] || `#${c.rank}`}</span>
           <span class="fs-end-name">${c.name}</span>
           <span class="fs-end-time">${PrecisionTimer.formatFull(c.raceTime)}</span>
-        </div>`)
-      .join('');
+        </div>
+      </div>`).join('');
   }
 
   if (DOM.fsEnd) DOM.fsEnd.classList.remove('hidden');
@@ -1543,11 +1546,11 @@ async function onFinishDeviceRaceEnd() {
   showToast('✅ 比赛结束', 'success');
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
 
-  // Auto-dismiss result overlay after 10s — finish device needs no manual button press
+  // Auto-dismiss after 30s (longer so reviewers can examine photos)
   setTimeout(() => {
     if (DOM.fsEnd) DOM.fsEnd.classList.add('hidden');
     if (DOM.fsStateLabel) DOM.fsStateLabel.textContent = '⏳ 等待下一组发令...';
-  }, 10000);
+  }, 30000);
 }
 
 function resetFinishDevice() {
@@ -1558,6 +1561,7 @@ function resetFinishDevice() {
   state.laneLastCrossingTime = {};
   state.lanesDone = 0;
   state.recordingStart = null;
+  recorder.clearBlob();
   if (mainStream && state.camGranted) recorder.initFromStream(mainStream);
 
   if (DOM.fsResults) DOM.fsResults.innerHTML = '';

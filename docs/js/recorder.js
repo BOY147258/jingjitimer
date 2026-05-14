@@ -6,6 +6,7 @@ export class VideoRecorder {
     this._blob          = null;
     this._recording     = false;
     this.hasVideo       = false;
+    this._stopComposite = null;
   }
 
   initFromStream(stream) {
@@ -13,25 +14,53 @@ export class VideoRecorder {
     this.hasVideo = stream.getVideoTracks().length > 0;
   }
 
+  // Record raw camera stream (solo/start device)
   start() {
     if (!this._stream || this._recording) return;
-    this._chunks = [];
-    this._blob   = null;
+    this._chunks = []; this._blob = null;
+    this._startRecorder(this._stream);
+  }
 
+  // Record composite canvas (video + finish-line overlay) — finish device
+  startComposite(videoEl, overlayCanvas, fps = 25) {
+    if (this._recording) return;
+    this._chunks = []; this._blob = null;
+
+    const W = videoEl.videoWidth  || 1280;
+    const H = videoEl.videoHeight || 720;
+    const composite = document.createElement('canvas');
+    composite.width = W; composite.height = H;
+    const ctx = composite.getContext('2d', { alpha: false });
+
+    let rafId;
+    const draw = () => {
+      if (!this._recording) return;
+      try {
+        ctx.drawImage(videoEl, 0, 0, W, H);
+        if (overlayCanvas) ctx.drawImage(overlayCanvas, 0, 0, W, H);
+      } catch {}
+      rafId = requestAnimationFrame(draw);
+    };
+    rafId = requestAnimationFrame(draw);
+    this._stopComposite = () => cancelAnimationFrame(rafId);
+
+    const stream = composite.captureStream(fps);
+    this._startRecorder(stream);
+  }
+
+  _startRecorder(stream) {
     const mimeTypes = [
-      'video/webm;codecs=vp9,opus',
-      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
       'video/webm',
       'video/mp4',
     ];
     const mime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
-
     try {
-      this._recorder = new MediaRecorder(this._stream, mime ? { mimeType: mime } : {});
+      this._recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
     } catch {
-      this._recorder = new MediaRecorder(this._stream);
+      this._recorder = new MediaRecorder(stream);
     }
-
     this._recorder.ondataavailable = e => {
       if (e.data && e.data.size > 0) this._chunks.push(e.data);
     };
@@ -40,6 +69,7 @@ export class VideoRecorder {
   }
 
   stop() {
+    if (this._stopComposite) { this._stopComposite(); this._stopComposite = null; }
     if (!this._recorder || !this._recording) return Promise.resolve(null);
     return new Promise(resolve => {
       this._recorder.onstop = () => {
@@ -50,6 +80,11 @@ export class VideoRecorder {
       };
       this._recorder.stop();
     });
+  }
+
+  clearBlob() {
+    this._blob   = null;
+    this._chunks = [];
   }
 
   getObjectURL() {
