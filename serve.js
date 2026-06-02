@@ -65,7 +65,34 @@ wss.on('connection', (ws, req) => {
   broadcast(room, { type: 'PEER_JOINED', role, clientId: id }, id);
 
   ws.on('message', data => {
-    try { broadcast(room, JSON.parse(data.toString()), id); } catch {}
+    try {
+      const msg = JSON.parse(data.toString());
+
+      // 为所有消息添加服务器时间戳和发送者信息
+      const enriched = {
+        ...msg,
+        senderId: id,
+        senderRole: role,
+        serverReceivedAt: Date.now(),
+      };
+
+      // 特殊处理：预约发令消息需要验证 startAt
+      if (msg.type === 'START_SCHEDULED' && msg.startAt) {
+        const now = Date.now();
+        const delay = msg.startAt - now;
+
+        // 如果预约时间在合理范围内（0-60秒），接受
+        if (delay >= 0 && delay <= 60000) {
+          console.log(`  [WS] Scheduled start in ${Math.round(delay)}ms for room ${room}`);
+        } else if (delay < 0) {
+          console.warn(`  [WS] Warning: startAt in the past (${-delay}ms ago)`);
+        }
+      }
+
+      broadcast(room, enriched, id);
+    } catch (e) {
+      console.error('[WS] Message parse error:', e);
+    }
   });
 
   ws.on('close', () => {

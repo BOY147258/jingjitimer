@@ -1,4 +1,13 @@
 import { readDB, writeDB, insertRecord, updateRecord, deleteRecord, findById } from './db.js';
+import {
+  RaceState,
+  canTransition,
+  validateTransition,
+  createShot,
+  transitionTo,
+  rankLanes,
+  checkNeedsReview,
+} from './state-machine.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function json(res, data, status = 200) {
@@ -43,6 +52,151 @@ export async function handleAPI(req, res) {
   // DELETE /api/meets/:id
 
   try {
+    // ── shots (枪次管理) ───────────────────────────────────────────────────
+    if (parts[0] === 'shots') {
+      // GET /api/shots — 获取所有枪次
+      if (method === 'GET' && !parts[1]) {
+        let shots = readDB('shots').reverse(); // 最新的在前
+        const roomCode = url.searchParams.get('roomCode');
+        const state = url.searchParams.get('state');
+        if (roomCode) shots = shots.filter(s => s.roomCode === roomCode);
+        if (state) shots = shots.filter(s => s.state === state);
+        return json(res, shots);
+      }
+
+      // POST /api/shots — 创建新枪次
+      if (method === 'POST') {
+        const b = await readBody(req);
+        if (!b.roomCode) return err(res, 'roomCode required');
+
+        const shot = createShot({
+          roomCode: b.roomCode,
+          eventId: b.eventId || null,
+          round: b.round || 1,
+          group: b.group || 1,
+          eventName: b.eventName || '',
+          laneCount: b.laneCount || 8,
+        });
+
+        const saved = insertRecord('shots', shot);
+        return json(res, saved, 201);
+      }
+
+      // GET /api/shots/:id — 获取单个枪次
+      if (method === 'GET' && parts[1]) {
+        const shot = findById(readDB('shots'), Number(parts[1]));
+        return shot ? json(res, shot) : err(res, 'not found', 404);
+      }
+
+      // PUT /api/shots/:id — 更新枪次
+      if (method === 'PUT' && parts[1]) {
+        const b = await readBody(req);
+        const updated = updateRecord('shots', Number(parts[1]), b);
+        return updated ? json(res, updated) : err(res, 'not found', 404);
+      }
+
+      // POST /api/shots/:id/transition — 状态转换
+      if (method === 'POST' && parts[1] === 'transition') {
+        const b = await readBody(req);
+        const { shotId, newState, data } = b;
+        if (!shotId || !newState) return err(res, 'shotId and newState required');
+
+        const shot = findById(readDB('shots'), Number(shotId));
+        if (!shot) return err(res, 'shot not found', 404);
+
+        // 验证状态转换
+        if (!canTransition(shot.state, newState)) {
+          return err(res, `Cannot transition from ${shot.state} to ${newState}`, 400);
+        }
+
+        // 执行转换
+        let updates = { state: newState, updatedAt: Date.now() };
+
+        // 根据目标状态添加额外数据
+        if (newState === RaceState.SCHEDULED && data?.scheduledStartAt) {
+          updates.scheduledStartAt = data.scheduledStartAt;
+        }
+        if (newState === RaceState.RUNNING && data?.actualStartAt) {
+          updates.actualStartAt = data.actualStartAt;
+        }
+        if (data?.lanes) {
+          updates.lanes = data.lanes;
+        }
+
+        const updated = updateRecord('shots', Number(shotId), updates);
+        return json(res, updated);
+      }
+
+      // POST /api/shots/:id/finish — 终点计时（批量更新道次成绩）
+      if (method === 'POST' && parts[1] && parts[2] === 'finish') {
+        const b = await readBody(req);
+        const shot = findById(readDB('shots'), Number(parts[1]));
+        if (!shot) return err(res, 'shot not found', 404);
+
+        // 更新道次成绩
+        let lanes = shot.lanes.map(lane => {
+          const update = (b.lanes || []).find(l => l.lane === lane.lane);
+          return update ? { ...lane, ...update } : lane;
+        });
+
+        // 自动排名
+        lanes = rankLanes(lanes);
+
+        // 检查是否需要复核
+        const needsReview = checkNeedsReview(lanes);
+        const newState = needsReview ? RaceState.REVIEW : RaceState.PUBLISHED;
+
+        const updated = updateRecord('shots', Number(parts[1]), {
+          lanes,
+          state: newState,
+          updatedAt: Date.now(),
+        });
+
+        return json(res, updated);
+      }
+
+      // POST /api/shots/:id/publish — 发布成绩
+      if (method === 'POST' && parts[1] && parts[2] === 'publish') {
+        const shot = findById(readDB('shots'), Number(parts[1]));
+        if (!shot) return err(res, 'shot not found', 404);
+
+        if (shot.state !== RaceState.REVIEW && shot.state !== RaceState.RUNNING) {
+          return err(res, `Cannot publish from state ${shot.state}`, 400);
+        }
+
+        const updated = updateRecord('shots', Number(parts[1]), {
+          state: RaceState.PUBLISHED,
+          updatedAt: Date.now(),
+        });
+
+        return json(res, updated);
+      }
+
+      // POST /api/shots/:id/abort — 召回重跑
+      if (method === 'POST' && parts[1] && parts[2] === 'abort') {
+        const b = await readBody(req);
+        const shot = findById(readDB('shots'), Number(parts[1]));
+        if (!shot) return err(res, 'shot not found', 404);
+
+        const updated = updateRecord('shots', Number(parts[1]), {
+          state: RaceState.ABORTED,
+          updatedAt: Date.now(),
+          metadata: {
+            ...shot.metadata,
+            abortReason: b.reason || '召回',
+          },
+        });
+
+        return json(res, updated);
+      }
+
+      // DELETE /api/shots/:id — 删除枪次
+      if (method === 'DELETE' && parts[1]) {
+        deleteRecord('shots', Number(parts[1]));
+        return json(res, { ok: true });
+      }
+    }
+
     // ── meets ──────────────────────────────────────────────────────────────
     if (parts[0] === 'meets') {
       if (method === 'GET' && !parts[1]) {

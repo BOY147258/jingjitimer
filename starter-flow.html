@@ -1,0 +1,320 @@
+<!-- 竞迹 AI 计时系统 — 发令端状态流程 UI -->
+<!-- 标准流程：各就位 → 预备 → 发令 → 计时中 → 成绩确认 -->
+
+<style>
+/* ── 发令端状态流程样式 ──────────────────────────────────────────────── */
+.starter-flow {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  color: #fff;
+  padding: 20px;
+}
+
+.starter-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.starter-header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0;
+  color: #ff6200;
+}
+
+.starter-header .room-code {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 5px;
+}
+
+/* 状态指示器 */
+.state-indicator {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.state-label {
+  font-size: 16px;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+.state-value {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #fff;
+}
+
+.state-desc {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-top: 10px;
+}
+
+/* 计时显示 */
+.timer-display {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 20px;
+  padding: 30px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.timer-display .time {
+  font-size: 72px;
+  font-weight: 800;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 4px;
+  color: #2ecc71;
+}
+
+/* 控制按钮 */
+.control-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.control-btn {
+  padding: 20px;
+  font-size: 20px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.control-btn:active {
+  transform: scale(0.98);
+}
+
+.control-btn.primary {
+  background: linear-gradient(135deg, #ff6200 0%, #ff8c42 100%);
+  color: #fff;
+}
+
+.control-btn.success {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  color: #fff;
+}
+
+.control-btn.danger {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: #fff;
+}
+
+.control-btn.warning {
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  color: #fff;
+}
+
+.control-btn.secondary {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 枪次信息 */
+.shot-info {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.shot-info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.shot-info-row:last-child {
+  margin-bottom: 0;
+}
+
+.shot-info-label {
+  opacity: 0.7;
+}
+
+.shot-info-value {
+  font-weight: 700;
+}
+
+/* 成绩列表 */
+.results-list {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.result-item:last-child {
+  margin-bottom: 0;
+}
+
+.result-lane {
+  font-size: 18px;
+  font-weight: 700;
+  width: 40px;
+}
+
+.result-athlete {
+  flex: 1;
+  font-size: 14px;
+}
+
+.result-time {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+
+.result-rank {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-left: 10px;
+}
+
+/* AI 状态标记 */
+.ai-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 8px;
+}
+
+.ai-badge.confirmed {
+  background: #2ecc71;
+  color: #fff;
+}
+
+.ai-badge.review {
+  background: #f39c12;
+  color: #fff;
+}
+</style>
+
+<!-- 发令端主容器 -->
+<div id="starter-flow" class="starter-flow hidden">
+
+  <!-- 头部 -->
+  <div class="starter-header">
+    <h1>🔫 发令端</h1>
+    <div class="room-code">房间号：<span id="starter-room-code">----</span></div>
+  </div>
+
+  <!-- 当前枪次信息 -->
+  <div id="starter-shot-info" class="shot-info hidden">
+    <div class="shot-info-row">
+      <span class="shot-info-label">项目</span>
+      <span class="shot-info-value" id="starter-event-name">—</span>
+    </div>
+    <div class="shot-info-row">
+      <span class="shot-info-label">轮次/组别</span>
+      <span class="shot-info-value"><span id="starter-round">1</span> 轮 · 第 <span id="starter-group">1</span> 组</span>
+    </div>
+    <div class="shot-info-row">
+      <span class="shot-info-label">道次</span>
+      <span class="shot-info-value" id="starter-lane-count">8</span>
+    </div>
+  </div>
+
+  <!-- 状态指示器 -->
+  <div class="state-indicator">
+    <div class="state-label">当前状态</div>
+    <div class="state-value" id="starter-state-display">空闲</div>
+    <div class="state-desc" id="starter-state-desc">点击「创建枪次」开始</div>
+  </div>
+
+  <!-- 计时显示（仅在 RUNNING 状态显示）-->
+  <div id="starter-timer" class="timer-display hidden">
+    <div class="time" id="starter-timer-display">0:00.00</div>
+  </div>
+
+  <!-- 成绩列表（仅在 REVIEW/PUBLISHED 状态显示）-->
+  <div id="starter-results" class="results-list hidden">
+    <!-- 动态生成 -->
+  </div>
+
+  <!-- 控制按钮 -->
+  <div class="control-buttons">
+    <!-- IDLE 状态 -->
+    <button id="btn-create-shot" class="control-btn primary">
+      ➕ 创建枪次
+    </button>
+
+    <!-- READY 状态 -->
+    <button id="btn-on-your-marks" class="control-btn primary hidden">
+      🏃 各就位
+    </button>
+
+    <!-- ON_YOUR_MARKS 状态 -->
+    <button id="btn-set" class="control-btn warning hidden">
+      ⚡ 预备
+    </button>
+
+    <!-- SET 状态 -->
+    <button id="btn-fire" class="control-btn danger hidden">
+      🔫 发令
+    </button>
+
+    <!-- RUNNING 状态 -->
+    <button id="btn-wait-finish" class="control-btn secondary hidden" disabled>
+      ⏱️ 等待终点确认...
+    </button>
+
+    <!-- REVIEW 状态 -->
+    <button id="btn-publish-results" class="control-btn success hidden">
+      ✅ 发布成绩
+    </button>
+
+    <!-- PUBLISHED 状态 -->
+    <button id="btn-next-shot" class="control-btn primary hidden">
+      ➡️ 下一枪
+    </button>
+
+    <!-- 召回按钮（在 ON_YOUR_MARKS/SET/SCHEDULED/RUNNING 时显示）-->
+    <button id="btn-abort" class="control-btn danger hidden">
+      🚫 召回重跑
+    </button>
+
+    <!-- 返回主页 -->
+    <button id="btn-back-home" class="control-btn secondary">
+      ← 返回主页
+    </button>
+  </div>
+
+</div>
