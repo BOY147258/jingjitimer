@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>手机扫码访问 - 竞迹计时系统</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      max-width: 600px;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+
+    .subtitle {
+      font-size: 16px;
+      opacity: 0.9;
+      margin-bottom: 30px;
+    }
+
+    .ip-box {
+      background: rgba(0,0,0,0.3);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+    }
+
+    .ip-label {
+      font-size: 14px;
+      opacity: 0.8;
+      margin-bottom: 10px;
+    }
+
+    .ip-address {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: 'Courier New', monospace;
+      word-break: break-all;
+    }
+
+    .qrcode-box {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 20px;
+    }
+
+    .instructions {
+      background: rgba(255, 193, 7, 0.2);
+      border: 2px solid rgba(255, 193, 7, 0.5);
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    .instructions h3 {
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+
+    .instructions ol {
+      margin-left: 20px;
+    }
+
+    .instructions li {
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #ff6200 0%, #ff8c42 100%);
+      color: #fff;
+      border: none;
+      padding: 15px 30px;
+      font-size: 16px;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .link-box {
+      background: rgba(0,0,0,0.3);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📱 手机扫码访问</h1>
+    <div class="subtitle">竞迹 AI 计时系统</div>
+
+    <div class="ip-box">
+      <div class="ip-label">你的局域网 IP 地址</div>
+      <div class="ip-address" id="ip-address">正在检测...</div>
+    </div>
+
+    <div class="qrcode-box">
+      <canvas id="qrcode" width="256" height="256"></canvas>
+    </div>
+
+    <div class="link-box" id="full-url">正在生成链接...</div>
+
+    <button class="btn" onclick="copyLink()">📋 复制链接</button>
+
+    <div class="instructions">
+      <h3>📱 手机访问步骤</h3>
+      <ol>
+        <li><strong>确保手机和电脑连接同一个 WiFi</strong></li>
+        <li><strong>方法 1：</strong>手机扫描上方二维码</li>
+        <li><strong>方法 2：</strong>手机浏览器输入上方地址</li>
+        <li><strong>方法 3：</strong>点击"复制链接"，发送到手机打开</li>
+      </ol>
+
+      <h3 style="margin-top: 20px;">⚠️ 如果无法访问</h3>
+      <ol>
+        <li>右键点击项目文件夹中的 <strong>开放端口-管理员.bat</strong></li>
+        <li>选择"以管理员身份运行"</li>
+        <li>等待提示"防火墙规则添加成功"</li>
+        <li>重新用手机访问</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    // 获取本机 IP
+    async function getLocalIP() {
+      try {
+        const response = await fetch('/ping');
+        const data = await response.json();
+
+        // 从 window.location 获取访问的 IP
+        const ip = window.location.hostname;
+
+        if (ip === 'localhost' || ip === '127.0.0.1') {
+          // 如果是本地访问，尝试获取真实 IP
+          document.getElementById('ip-address').textContent = '请使用局域网 IP 访问本页面';
+          document.getElementById('full-url').textContent = '提示：不要用 localhost 访问，请用 192.168.x.x';
+          return null;
+        }
+
+        return ip;
+      } catch (e) {
+        console.error('获取 IP 失败', e);
+        return null;
+      }
+    }
+
+    // 生成二维码
+    function generateQRCode(text) {
+      const canvas = document.getElementById('qrcode');
+      const ctx = canvas.getContext('2d');
+      const size = 256;
+
+      // 简单的文本显示（实际项目中应该使用 QRCode.js 库）
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#000';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('请使用二维码生成库', size/2, size/2 - 20);
+      ctx.fillText('或手动输入下方地址', size/2, size/2);
+
+      // 提示：这里应该集成真正的二维码生成库
+      // 比如：https://github.com/davidshimjs/qrcodejs
+    }
+
+    // 复制链接
+    function copyLink() {
+      const url = document.getElementById('full-url').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('✅ 链接已复制！\n\n现在可以发送到手机打开了。');
+      }).catch(() => {
+        alert('❌ 复制失败，请手动复制链接');
+      });
+    }
+
+    // 初始化
+    async function init() {
+      const ip = await getLocalIP();
+
+      if (ip) {
+        const url = `http://${ip}:8080/simple.html`;
+        document.getElementById('ip-address').textContent = ip;
+        document.getElementById('full-url').textContent = url;
+        generateQRCode(url);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
