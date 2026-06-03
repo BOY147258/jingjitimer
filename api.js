@@ -387,12 +387,81 @@ export async function handleAPI(req, res) {
         };
       });
 
+      // 个人最佳成绩统计
+      const athleteStats = {};
+      results.forEach(r => {
+        if (!r.athleteName || !r.timeMs) return;
+        if (!athleteStats[r.athleteName]) {
+          athleteStats[r.athleteName] = {
+            name: r.athleteName,
+            races: 0,
+            bestTime: Infinity,
+            avgTime: 0,
+            totalTime: 0,
+            podiums: 0, // 前三名次数
+            wins: 0,    // 第一名次数
+          };
+        }
+        const stat = athleteStats[r.athleteName];
+        stat.races++;
+        stat.totalTime += r.timeMs;
+        if (r.timeMs < stat.bestTime) stat.bestTime = r.timeMs;
+        if (r.rank === 1) stat.wins++;
+        if (r.rank <= 3) stat.podiums++;
+      });
+
+      // 计算平均成绩
+      Object.values(athleteStats).forEach(stat => {
+        stat.avgTime = Math.round(stat.totalTime / stat.races);
+        if (stat.bestTime === Infinity) stat.bestTime = null;
+      });
+
+      // 最佳运动员排行（按最佳成绩）
+      const topAthletes = Object.values(athleteStats)
+        .filter(s => s.bestTime !== null)
+        .sort((a, b) => a.bestTime - b.bestTime)
+        .slice(0, 10);
+
+      // 比赛统计
+      const raceStats = {
+        totalRaces: results.length,
+        completedRaces: results.filter(r => r.timeMs).length,
+        avgFinishTime: 0,
+      };
+
+      const validTimes = results.filter(r => r.timeMs).map(r => r.timeMs);
+      if (validTimes.length > 0) {
+        raceStats.avgFinishTime = Math.round(
+          validTimes.reduce((a, b) => a + b, 0) / validTimes.length
+        );
+      }
+
+      // 趋势分析：最近7天的比赛数量
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const recentTrend = [];
+      for (let i = 6; i >= 0; i--) {
+        const dayStart = now - i * dayMs;
+        const dayEnd = dayStart + dayMs;
+        const count = results.filter(r =>
+          r.recordedAt >= dayStart && r.recordedAt < dayEnd
+        ).length;
+        recentTrend.push({
+          date: new Date(dayStart).toISOString().slice(0, 10),
+          count,
+        });
+      }
+
       return json(res, {
         totalMeets:    meets.length,
         totalEvents:   events.length,
         totalAthletes: athletes.length,
         totalResults:  results.length,
         eventBests,
+        athleteStats: Object.values(athleteStats),
+        topAthletes,
+        raceStats,
+        recentTrend,
       });
     }
 
@@ -400,6 +469,7 @@ export async function handleAPI(req, res) {
     if (parts[0] === 'export' && parts[1] === 'csv' && method === 'GET') {
       const meetId  = url.searchParams.get('meetId');
       const eventId = url.searchParams.get('eventId');
+      const format  = url.searchParams.get('format') || 'standard'; // 'standard' | 'detailed'
 
       let results = readDB('results');
       let events  = readDB('events');
@@ -417,27 +487,62 @@ export async function handleAPI(req, res) {
       const evMap   = Object.fromEntries(events.map(e => [e.id, e]));
       const meetMap = Object.fromEntries(meets.map(m => [m.id, m]));
 
-      const headers = ['赛事', '项目', '轮次', '组别', '姓名', '号码', '单位', '道次', '时间', '成绩(ms)', '圈次成绩', '排名', '晋级', '记录时间'];
-      const rows = results.map(r => {
-        const ev   = evMap[r.eventId] || {};
-        const meet = meetMap[ev.meetId] || {};
-        return [
-          meet.name || '',
-          ev.name || '',
-          r.round,
-          r.group,
-          r.athleteName,
-          r.number,
-          r.team,
-          r.laneIndex != null ? r.laneIndex + 1 : '',
-          msToDisplay(r.timeMs),
-          r.timeMs ?? '',
-          (r.lapTimes || []).map(msToDisplay).join(' | '),
-          r.rank ?? '',
-          r.qualified ? '是' : '否',
-          r.recordedAt ? new Date(r.recordedAt).toISOString() : '',
-        ].map(csvEscape);
-      });
+      let headers, rows;
+
+      if (format === 'detailed') {
+        // 详细格式：包含更多统计信息
+        headers = [
+          '赛事', '项目', '轮次', '组别', '姓名', '号码', '单位', '道次',
+          '时间', '成绩(ms)', '圈次成绩', '排名', '晋级', 'AI置信度', 'AI方法',
+          '记录时间', '备注'
+        ];
+        rows = results.map(r => {
+          const ev   = evMap[r.eventId] || {};
+          const meet = meetMap[ev.meetId] || {};
+          return [
+            meet.name || '',
+            ev.name || '',
+            r.round,
+            r.group,
+            r.athleteName,
+            r.number,
+            r.team,
+            r.laneIndex != null ? r.laneIndex + 1 : '',
+            msToDisplay(r.timeMs),
+            r.timeMs ?? '',
+            (r.lapTimes || []).map(msToDisplay).join(' | '),
+            r.rank ?? '',
+            r.qualified ? '是' : '否',
+            r.aiConfidence != null ? `${Math.round(r.aiConfidence * 100)}%` : '',
+            r.aiMethod || '',
+            r.recordedAt ? new Date(r.recordedAt).toISOString() : '',
+            r.notes || '',
+          ].map(csvEscape);
+        });
+      } else {
+        // 标准格式
+        headers = ['赛事', '项目', '轮次', '组别', '姓名', '号码', '单位', '道次', '时间', '成绩(ms)', '圈次成绩', '排名', '晋级', '记录时间'];
+        rows = results.map(r => {
+          const ev   = evMap[r.eventId] || {};
+          const meet = meetMap[ev.meetId] || {};
+          return [
+            meet.name || '',
+            ev.name || '',
+            r.round,
+            r.group,
+            r.athleteName,
+            r.number,
+            r.team,
+            r.laneIndex != null ? r.laneIndex + 1 : '',
+            msToDisplay(r.timeMs),
+            r.timeMs ?? '',
+            (r.lapTimes || []).map(msToDisplay).join(' | '),
+            r.rank ?? '',
+            r.qualified ? '是' : '否',
+            r.recordedAt ? new Date(r.recordedAt).toISOString() : '',
+          ].map(csvEscape);
+        });
+      }
 
       const bom = '﻿';
       const csv = bom + [headers.map(csvEscape), ...rows].map(r => r.join(',')).join('\r\n');

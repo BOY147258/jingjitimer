@@ -13,6 +13,11 @@ export class Sync {
     this._autoReconnect    = true;
     this._reconnectCount   = 0;
     this.rtt               = null;  // median one-way latency in ms (set after calibrate)
+    this.accuracy          = null;  // clock sync accuracy (std deviation in ms)
+    this._messageQueue     = [];    // 消息队列，用于连接断开时缓存
+    this._nextSeq          = 0;     // 消息序列号
+    this._heartbeatTimer   = null;  // 心跳定时器
+    this._lastPongTime     = 0;     // 最后一次收到pong的时间
   }
 
   get finishPeerCount() {
@@ -22,35 +27,62 @@ export class Sync {
     return this.peers.filter(p => p.role === 'observer').length;
   }
 
-  // Calibrate local clock against server (NTP-lite)
-  async calibrate(attempts = 5) {
-    const offsets = [];
-    const rtts    = [];
+  // Calibrate local clock against server (NTP-lite with outlier rejection)
+  async calibrate(attempts = 7) {
+    const measurements = [];
+
     for (let i = 0; i < attempts; i++) {
       try {
-        const t1    = performance.now();
+        const t1 = performance.now();
         const pingUrl = this._serverHost
           ? `https://${this._serverHost}/ping`
           : '/ping';
-        const r  = await fetch(pingUrl, { cache: 'no-store' });
+        const r = await fetch(pingUrl, {
+          cache: 'no-store',
+          priority: 'high'  // 优先级高，减少浏览器排队
+        });
         const t4 = performance.now();
-        if (!r.ok) break;                        // no server — skip silently
+
+        if (!r.ok) break;
         const ct = r.headers.get('content-type') || '';
-        if (!ct.includes('json')) break;         // got HTML 404, not JSON
+        if (!ct.includes('json')) break;
         const { serverTime } = await r.json();
         if (!serverTime) break;
-        offsets.push(serverTime - (t1 + (t4 - t1) / 2));
-        rtts.push(t4 - t1);
-        if (i < attempts - 1) await new Promise(r => setTimeout(r, 40));
-      } catch { break; }                         // network error — skip silently
+
+        const rtt = t4 - t1;
+        const offset = serverTime - (t1 + rtt / 2);
+
+        measurements.push({ offset, rtt, t1, t4, serverTime });
+
+        if (i < attempts - 1) await new Promise(r => setTimeout(r, 30));
+      } catch { break; }
     }
-    if (offsets.length > 0) {
-      offsets.sort((a, b) => a - b);
-      this._offset = offsets[Math.floor(offsets.length / 2)];
-      rtts.sort((a, b) => a - b);
-      this.rtt = Math.round(rtts[Math.floor(rtts.length / 2)] / 2);
+
+    if (measurements.length > 0) {
+      // 剔除RTT异常值（使用IQR方法）
+      const rtts = measurements.map(m => m.rtt).sort((a, b) => a - b);
+      const q1 = rtts[Math.floor(rtts.length * 0.25)];
+      const q3 = rtts[Math.floor(rtts.length * 0.75)];
+      const iqr = q3 - q1;
+      const maxRtt = q3 + 1.5 * iqr;
+
+      // 只保留RTT正常的测量
+      const filtered = measurements.filter(m => m.rtt <= maxRtt);
+
+      if (filtered.length > 0) {
+        // 使用中位数作为最终结果（更稳定）
+        const offsets = filtered.map(m => m.offset).sort((a, b) => a - b);
+        const validRtts = filtered.map(m => m.rtt).sort((a, b) => a - b);
+
+        this._offset = offsets[Math.floor(offsets.length / 2)];
+        this.rtt = Math.round(validRtts[Math.floor(validRtts.length / 2)] / 2);
+
+        // 计算精度（标准差）
+        const mean = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+        const variance = offsets.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / offsets.length;
+        this.accuracy = Math.sqrt(variance);
+      }
     }
-    // If no server available, _offset stays 0 (use local clock)
   }
 
   // Server-synchronized "now" in ms (comparable across devices)
@@ -89,12 +121,24 @@ export class Sync {
             this._reconnectCount = 0;
             this.peers           = (event.peers || []).map(r => ({ role: r, clientId: null }));
             this.peerOnline      = this.peers.length > 0;
+            this._lastPongTime   = Date.now();
+
+            // 刷新队列中的消息
+            this._flushMessageQueue();
+
+            // 启动心跳检测
+            this._startHeartbeat();
+
             if (firstTime) {
               settle(resolve, event);
             } else {
               // Reconnected — fire RECONNECTED callbacks
               (this._cbs.get('RECONNECTED') || []).forEach(cb => cb(event));
             }
+          }
+
+          if (event.type === 'PONG') {
+            this._lastPongTime = Date.now();
           }
 
           if (event.type === 'PEER_JOINED') {
@@ -151,11 +195,47 @@ export class Sync {
     } catch { /* onclose will retry */ }
   }
 
-  // Send event to all peers in room via WebSocket
+  // Send event to all peers in room via WebSocket (with message queue)
   send(type, data = {}) {
-    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
-    const event = { type, ...data, _serverTime: this.serverNow(), _role: this.role };
-    this._ws.send(JSON.stringify(event));
+    const event = {
+      type,
+      ...data,
+      _serverTime: this.serverNow(),
+      _role: this.role,
+      _clientId: this.clientId,
+      _seq: this._nextSeq++  // 消息序列号，用于检测丢包
+    };
+
+    // 如果连接未打开，加入队列
+    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+      this._messageQueue.push(event);
+      return false;
+    }
+
+    try {
+      this._ws.send(JSON.stringify(event));
+      return true;
+    } catch (e) {
+      console.warn('[Sync] Send failed:', e);
+      this._messageQueue.push(event);
+      return false;
+    }
+  }
+
+  // 批量发送队列中的消息
+  _flushMessageQueue() {
+    if (this._messageQueue.length === 0) return;
+
+    const toSend = this._messageQueue.splice(0, 50); // 一次最多发50条
+    toSend.forEach(event => {
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        try {
+          this._ws.send(JSON.stringify(event));
+        } catch (e) {
+          console.warn('[Sync] Flush failed:', e);
+        }
+      }
+    });
   }
 
   on(type, cb) {
@@ -163,12 +243,52 @@ export class Sync {
     this._cbs.get(type).push(cb);
   }
 
+  // 启动心跳检测
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatTimer = setInterval(() => {
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        // 发送PING
+        this.send('PING', { timestamp: Date.now() });
+
+        // 检测是否超时（10秒内没收到PONG）
+        const now = Date.now();
+        if (now - this._lastPongTime > 10000) {
+          console.warn('[Sync] Heartbeat timeout, reconnecting...');
+          this._ws.close();
+        }
+      }
+    }, 5000); // 每5秒一次心跳
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) {
+      clearInterval(this._heartbeatTimer);
+      this._heartbeatTimer = null;
+    }
+  }
+
   disconnect() {
     this._autoReconnect = false;
+    this._stopHeartbeat();
     this._ws?.close();
     this._ws       = null;
     this.connected = false;
     this.peers     = [];
+    this._messageQueue = [];
+  }
+
+  // 获取当前连接状态信息（用于调试）
+  getStats() {
+    return {
+      connected: this.connected,
+      rtt: this.rtt,
+      accuracy: this.accuracy,
+      offset: this._offset,
+      peers: this.peers.length,
+      queueSize: this._messageQueue.length,
+      reconnectCount: this._reconnectCount
+    };
   }
 }
 

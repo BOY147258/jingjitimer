@@ -68,6 +68,12 @@ wss.on('connection', (ws, req) => {
     try {
       const msg = JSON.parse(data.toString());
 
+      // 心跳响应
+      if (msg.type === 'PING') {
+        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+        return;
+      }
+
       // 为所有消息添加服务器时间戳和发送者信息
       const enriched = {
         ...msg,

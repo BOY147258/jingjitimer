@@ -29,6 +29,18 @@ export class FinishLineDetector {
     this._laneFinishLabel = {};
     // Cooldown between crossings per lane (ms). Increase for multi-lap to prevent double-count.
     this.cooldownMs    = 1500;
+    // 性能优化相关
+    this._frameBuffer      = [];      // 帧缓冲区，用于多帧分析
+    this._frameBufferSize  = 3;       // 缓冲区大小
+    this._skipFrames       = 0;       // 跳帧计数器
+    this._adaptiveSkip     = 1;       // 自适应跳帧（1=不跳，2=跳一半）
+    this._lastFrameTime    = 0;       // 上一帧时间
+    this._fps              = 0;       // 当前帧率
+    this._performanceMode  = 'balanced'; // 'high' | 'balanced' | 'low'
+    // 高级检测算法
+    this._motionHistory    = [];      // 运动历史记录，用于趋势分析
+    this._historySize      = 5;       // 历史记录大小
+    this._edgeEnhancement  = true;    // 边缘增强
   }
 
   // Permanently lock a lane after its athlete crosses. Pass optional display label (e.g. "13.24").
@@ -95,9 +107,62 @@ export class FinishLineDetector {
 
   _loop() {
     if (!this._running) return;
-    this._analyze();
+
+    // 计算帧率和自适应跳帧
+    const now = performance.now();
+    const delta = now - this._lastFrameTime;
+    if (this._lastFrameTime > 0) {
+      this._fps = Math.round(1000 / delta);
+      // 根据性能模式和实际帧率调整跳帧策略
+      if (this._performanceMode === 'high' || this._fps >= 30) {
+        this._adaptiveSkip = 1; // 不跳帧
+      } else if (this._fps >= 20) {
+        this._adaptiveSkip = 2; // 处理一半帧
+      } else {
+        this._adaptiveSkip = 3; // 处理三分之一帧
+      }
+    }
+    this._lastFrameTime = now;
+
+    // 跳帧逻辑
+    this._skipFrames++;
+    if (this._skipFrames % this._adaptiveSkip === 0) {
+      this._analyze();
+    }
+
     this._drawOverlay();
     requestAnimationFrame(() => this._loop());
+  }
+
+  // 设置性能模式
+  setPerformanceMode(mode) {
+    this._performanceMode = mode; // 'high' | 'balanced' | 'low'
+    if (mode === 'high') {
+      this._W = 48; // 更宽的检测带
+      this._frameBufferSize = 5;
+    } else if (mode === 'balanced') {
+      this._W = 32;
+      this._frameBufferSize = 3;
+    } else {
+      this._W = 24;
+      this._frameBufferSize = 2;
+    }
+    // 重新初始化canvas
+    if (this._canvas) {
+      this._canvas.width = this._W;
+      this._canvas.height = this._H;
+    }
+  }
+
+  // 获取当前性能统计
+  getPerformanceStats() {
+    return {
+      fps: this._fps,
+      skipRate: this._adaptiveSkip,
+      mode: this._performanceMode,
+      detectionWidth: this._W,
+      bufferSize: this._frameBufferSize
+    };
   }
 
   // Returns true when the raw video pixels are rotated 90° relative to the display.
@@ -152,33 +217,67 @@ export class FinishLineDetector {
       return;
     }
 
+    // 边缘增强预处理（可选）
+    let processedData = slice.data;
+    if (this._edgeEnhancement) {
+      processedData = this._applyEdgeEnhancement(slice.data, W, H);
+    }
+
     // Motion per pixel row across the narrow strip
     const motionPerRow = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       let rowDiff = 0;
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
-        rowDiff += Math.abs(slice.data[i]   - this._prevSlice[i]);
-        rowDiff += Math.abs(slice.data[i+1] - this._prevSlice[i+1]);
-        rowDiff += Math.abs(slice.data[i+2] - this._prevSlice[i+2]);
+        rowDiff += Math.abs(processedData[i]   - this._prevSlice[i]);
+        rowDiff += Math.abs(processedData[i+1] - this._prevSlice[i+1]);
+        rowDiff += Math.abs(processedData[i+2] - this._prevSlice[i+2]);
       }
       motionPerRow[y] = rowDiff / (W * 3);
     }
 
     this._prevSlice.set(slice.data);
 
+    // 多帧平滑 - 添加到缓冲区
+    this._frameBuffer.push(motionPerRow);
+    if (this._frameBuffer.length > this._frameBufferSize) {
+      this._frameBuffer.shift();
+    }
+
+    // 使用多帧平均值（减少抖动）
+    const smoothedMotion = new Float32Array(H);
+    for (let y = 0; y < H; y++) {
+      let sum = 0;
+      for (let frame of this._frameBuffer) {
+        sum += frame[y];
+      }
+      smoothedMotion[y] = sum / this._frameBuffer.length;
+    }
+
     let total = 0;
-    for (let i = 0; i < H; i++) total += motionPerRow[i];
+    for (let i = 0; i < H; i++) total += smoothedMotion[i];
     const level = Math.min(1, total / (H * this._threshold * 2));
     this._lastMotion = level;
 
-    const blobs = this._detectBlobs(motionPerRow, H);
+    // 运动趋势分析
+    this._motionHistory.push(level);
+    if (this._motionHistory.length > this._historySize) {
+      this._motionHistory.shift();
+    }
+
+    const blobs = this._detectBlobs(smoothedMotion, H);
     this._lastBlobs = blobs;
     this.onLevel?.(level, blobs);
 
     blobs.forEach(blob => {
       const laneIdx = this._laneFromY(blob.center);
       if (this._cooldowns[laneIdx]) return;
+
+      // 趋势验证：检测是否是真实的上升趋势（减少误触发）
+      const isTrending = this._isMotionTrending();
+      if (!isTrending && blob.peak < this._threshold * 1.2) {
+        return; // 运动不够强或不是趋势性的，忽略
+      }
 
       const ts     = performance.now();
       const diffMs = ts - this._lastCrossingTs;
@@ -199,6 +298,45 @@ export class FinishLineDetector {
         if (!this._laneDone.has(laneIdx)) this._cooldowns[laneIdx] = false;
       }, this.cooldownMs);
     });
+  }
+
+  // 边缘增强算法（Sobel算子简化版）
+  _applyEdgeEnhancement(data, W, H) {
+    const enhanced = new Uint8ClampedArray(data.length);
+    enhanced.set(data);
+
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = (y * W + x) * 4;
+
+        // 简化的Sobel算子（仅检测水平边缘）
+        const gx =
+          -data[((y-1)*W + (x-1))*4] - 2*data[((y-1)*W + x)*4] - data[((y-1)*W + (x+1))*4] +
+           data[((y+1)*W + (x-1))*4] + 2*data[((y+1)*W + x)*4] + data[((y+1)*W + (x+1))*4];
+
+        const magnitude = Math.min(255, Math.abs(gx) * 0.5);
+
+        // 增强边缘
+        enhanced[i] = Math.min(255, data[i] + magnitude * 0.3);
+        enhanced[i+1] = Math.min(255, data[i+1] + magnitude * 0.3);
+        enhanced[i+2] = Math.min(255, data[i+2] + magnitude * 0.3);
+      }
+    }
+
+    return enhanced;
+  }
+
+  // 检测运动是否呈上升趋势
+  _isMotionTrending() {
+    if (this._motionHistory.length < 3) return true; // 数据不足，假设有效
+
+    const recent = this._motionHistory.slice(-3);
+    let rising = 0;
+    for (let i = 1; i < recent.length; i++) {
+      if (recent[i] > recent[i-1]) rising++;
+    }
+
+    return rising >= 2; // 至少2次上升
   }
 
   _detectBlobs(motionPerRow, H) {

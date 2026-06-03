@@ -98,6 +98,17 @@ export class AIFinishLineDetector {
   startAIDetection() {
     let frameCount = 0;
     let previousFrame = null;
+    let motionHistory = {}; // 每个道次的运动历史
+
+    // 初始化每个道次的历史
+    for (let i = 0; i < this.laneCount; i++) {
+      motionHistory[i] = {
+        samples: [],      // 运动强度采样
+        maxMotion: 0,     // 最大运动值
+        triggered: false, // 是否已触发
+        framesSincePeak: 0 // 峰值后的帧数
+      };
+    }
 
     const detectFrame = async () => {
       if (!this.isRunning) return;
@@ -117,18 +128,49 @@ export class AIFinishLineDetector {
           // 检查该道次是否已记录
           if (this.detections.find(d => d.lane === lane)) continue;
 
-          // 检测终点线区域的运动
-          const motion = this.detectMotionInLane(lane, currentFrame, previousFrame);
+          const history = motionHistory[lane];
 
-          if (motion.detected && motion.confidence > 0.7) {
+          // 检测终点线区域的运动（增强版）
+          const motion = this.detectMotionInLaneAdvanced(lane, currentFrame, previousFrame);
+
+          // 记录历史
+          history.samples.push(motion.avgDiff);
+          if (history.samples.length > 10) history.samples.shift();
+
+          // 更新最大值
+          if (motion.avgDiff > history.maxMotion) {
+            history.maxMotion = motion.avgDiff;
+            history.framesSincePeak = 0;
+          } else {
+            history.framesSincePeak++;
+          }
+
+          // 智能触发逻辑：
+          // 1. 运动强度达到阈值
+          // 2. 置信度足够高
+          // 3. 存在明显的运动趋势（连续3帧上升）
+          const trend = this.calculateMotionTrend(history.samples);
+          const shouldTrigger =
+            motion.detected &&
+            motion.confidence > 0.7 &&
+            (trend > 0.6 || motion.avgDiff > 25);
+
+          if (shouldTrigger && !history.triggered) {
+            history.triggered = true;
             const finishTime = Date.now() - this.startTime;
-            this.recordDetection(lane, finishTime, motion.confidence, 'video_motion');
+
+            // 置信度调整：基于运动趋势和强度
+            let adjustedConfidence = motion.confidence;
+            if (trend > 0.8) adjustedConfidence = Math.min(1.0, adjustedConfidence + 0.1);
+            if (motion.avgDiff > 30) adjustedConfidence = Math.min(1.0, adjustedConfidence + 0.05);
+
+            this.recordDetection(lane, finishTime, adjustedConfidence, 'ai_enhanced');
           }
         }
       }
 
-      // 保存当前帧用于下一次对比
-      if (frameCount % 2 === 0) { // 每2帧保存一次（降低内存消耗）
+      // 保存当前帧用于下一次对比（优化：降采样）
+      if (frameCount % 2 === 0) {
         previousFrame = currentFrame;
       }
 
@@ -137,6 +179,98 @@ export class AIFinishLineDetector {
     };
 
     detectFrame();
+  }
+
+  // 增强版运动检测：多特征融合
+  detectMotionInLaneAdvanced(lane, currentFrame, previousFrame) {
+    const width = this.canvasElement.width;
+    const height = this.canvasElement.height;
+    const laneHeight = height / this.laneCount;
+
+    // 终点线位置（屏幕中央垂直区域）
+    const finishLineX = Math.floor(width * 0.5);
+    const detectionZoneWidth = Math.floor(width * 0.12); // 扩大到12%
+
+    // 该道次的 Y 坐标范围
+    const laneTop = Math.floor(lane * laneHeight);
+    const laneBottom = Math.floor((lane + 1) * laneHeight);
+
+    let totalDiff = 0;
+    let pixelCount = 0;
+    let significantMotion = 0;
+    let edgeMotion = 0; // 边缘运动（更可靠）
+
+    // 扫描终点线区域的像素
+    for (let y = laneTop; y < laneBottom; y++) {
+      for (let x = finishLineX - detectionZoneWidth; x < finishLineX + detectionZoneWidth; x++) {
+        if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+        const idx = (y * width + x) * 4;
+
+        // 计算 RGB 差异
+        const rDiff = Math.abs(currentFrame.data[idx] - previousFrame.data[idx]);
+        const gDiff = Math.abs(currentFrame.data[idx + 1] - previousFrame.data[idx + 1]);
+        const bDiff = Math.abs(currentFrame.data[idx + 2] - previousFrame.data[idx + 2]);
+
+        const diff = (rDiff + gDiff + bDiff) / 3;
+        totalDiff += diff;
+        pixelCount++;
+
+        // 显著运动阈值
+        if (diff > 25) {
+          significantMotion++;
+        }
+
+        // 边缘检测：检测跨越终点线的边缘
+        if (Math.abs(x - finishLineX) < 5) {
+          if (diff > 35) {
+            edgeMotion++;
+          }
+        }
+      }
+    }
+
+    const avgDiff = pixelCount > 0 ? totalDiff / pixelCount : 0;
+    const motionRatio = pixelCount > 0 ? significantMotion / pixelCount : 0;
+    const edgeRatio = pixelCount > 0 ? edgeMotion / (pixelCount * 0.1) : 0; // 边缘区域占10%
+
+    // 综合判断：平均变化、运动比例、边缘运动
+    const detected = (avgDiff > 12 && motionRatio > 0.15) || edgeRatio > 0.3;
+
+    // 多因素置信度计算
+    let confidence = 0;
+    confidence += Math.min(0.4, avgDiff / 50);           // 平均差异贡献40%
+    confidence += Math.min(0.3, motionRatio / 0.4);      // 运动比例贡献30%
+    confidence += Math.min(0.3, edgeRatio);              // 边缘运动贡献30%
+    confidence = Math.min(1.0, confidence);
+
+    return {
+      detected,
+      confidence: Math.round(confidence * 100) / 100,
+      avgDiff,
+      motionRatio,
+      edgeRatio,
+    };
+  }
+
+  // 计算运动趋势（0-1，1表示强烈上升趋势）
+  calculateMotionTrend(samples) {
+    if (samples.length < 3) return 0;
+
+    const recent = samples.slice(-5); // 最近5帧
+    let risingCount = 0;
+    let totalChange = 0;
+
+    for (let i = 1; i < recent.length; i++) {
+      const change = recent[i] - recent[i - 1];
+      if (change > 0) risingCount++;
+      totalChange += change;
+    }
+
+    const trendScore = risingCount / (recent.length - 1);
+    const changeScore = Math.min(1, totalChange / 50);
+
+    return (trendScore * 0.6 + changeScore * 0.4);
   }
 
   // ── 运动检测：检测特定道次的终点线区域 ──────────────────────────────────────
