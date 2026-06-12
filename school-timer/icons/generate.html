@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>生成图标</title>
+</head>
+<body>
+  <canvas id="canvas" width="192" height="192"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // 背景
+    ctx.fillStyle = '#2563eb';
+    ctx.fillRect(0, 0, 192, 192);
+
+    // 绘制跑步者图标
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 80px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🏃', 96, 96);
+
+    // 保存
+    const link = document.createElement('a');
+    link.download = 'icon-192.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  </script>
+</body>
+</html>
