@@ -1,4 +1,5 @@
-// AI finish line detection via pixel motion analysis
+// AI finish line detection via pixel motion analysis v2.0
+// 优化：环境自适应阈值 + 多人冲线毫秒级精确排序 + 误触发防护
 export class FinishLineDetector {
   constructor() {
     this._video             = null;
@@ -8,62 +9,77 @@ export class FinishLineDetector {
     this._dispCtx           = null;
     this._prevSlice         = null;
     this._linePos           = 0.5;
-    this._threshold         = 12;   // lower = more sensitive; user can adjust via slider
+    this._threshold         = 12;   // lower = more sensitive
+    this._baseThreshold     = 12;   // 基础阈值（用于自适应调整）
     this._running           = false;
     this._laneCount         = 4;
     this._laneDividers      = [];
     this._cooldowns         = [];
     this._lastMotion        = 0;
     this._lastBlobs         = [];
-    this._lastCrossingTs    = -Infinity;  // performance.now() of last crossing
+    this._lastCrossingTs    = -Infinity;
     this._lastCrossingLane  = -1;
-    this.onCrossing         = null;  // cb(laneIdx, perfTimestamp)
-    this.onLevel            = null;  // cb(level 0–1, blobsArray)
-    this.onCloseFinish      = null;  // cb(firstLane, secondLane, diffMs) — fired when gap < 300ms
-    // Analysis canvas: narrow strip centered on finish line (wider = more robust)
+    this.onCrossing         = null;  // cb(laneIdx, precisionTimestamp)
+    this.onLevel            = null;
+    this.onCloseFinish      = null;
     this._W = 48;
     this._H = 120;
-    // Lanes permanently locked after first crossing (cleared on race reset)
     this._laneDone     = new Set();
-    // Optional per-lane finish time strings for overlay display
     this._laneFinishLabel = {};
-    // Cooldown between crossings per lane (ms). Increase for multi-lap to prevent double-count.
     this.cooldownMs    = 1200;
-    // 性能优化相关
-    this._frameBuffer      = [];      // 帧缓冲区，用于多帧分析
-    this._frameBufferSize  = 3;       // 缓冲区大小
-    this._skipFrames       = 0;       // 跳帧计数器
-    this._adaptiveSkip     = 1;       // 自适应跳帧（1=不跳，2=跳一半）
-    this._lastFrameTime    = 0;       // 上一帧时间
-    this._fps              = 0;       // 当前帧率
-    this._performanceMode  = 'balanced'; // 'high' | 'balanced' | 'low'
+    // 性能优化
+    this._frameBuffer      = [];
+    this._frameBufferSize  = 3;
+    this._skipFrames       = 0;
+    this._adaptiveSkip     = 1;
+    this._lastFrameTime    = 0;
+    this._fps              = 0;
+    this._performanceMode  = 'balanced';
     // 高级检测算法
-    this._motionHistory    = [];      // 运动历史记录，用于趋势分析
-    this._historySize      = 5;       // 历史记录大小
-    this._edgeEnhancement  = true;    // 边缘增强
+    this._motionHistory    = [];
+    this._historySize      = 5;
+    this._edgeEnhancement  = true;
+    // 环境自适应
+    this._ambientLight     = 0;     // 当前环境光强度
+    this._ambientSamples   = [];    // 环境光样本
+    this._maxAmbientSamples = 30;   // 最多保存30个样本
+    // 多人冲线优化
+    this._crossingQueue    = [];    // 冲线事件队列（用于精确排序）
+    this._crossingProcessTimer = null;
+    this._minGapBetweenLane = 50;   // 同道次最小间隔（毫秒）
+    // 误触发防护
+    this._gracePeriod      = 500;   // grace period 毫秒
+    this._minMotionPeak    = 8;     // 最小运动峰值（低于此值忽略）
+    this._falseTriggerCount = 0;    // 误触发计数
+    this._lastFalseTrigger = 0;    // 上次误触发时间
   }
 
-  // Permanently lock a lane after its athlete crosses. Pass optional display label (e.g. "13.24").
   setLaneDone(laneIdx, label = '✓') {
     this._laneDone.add(laneIdx);
-    this._cooldowns[laneIdx] = true;   // immediate suppression
+    this._cooldowns[laneIdx] = true;
     this._laneFinishLabel[laneIdx] = label;
   }
 
-  // Clear all locks — call at race start / reset.
   resetLaneDone() {
     this._laneDone.clear();
     this._laneFinishLabel = {};
     this._cooldowns = new Array(this._laneCount).fill(false);
+    // 重置冲线队列
+    this._crossingQueue = [];
+    this._falseTriggerCount = 0;
   }
 
   get threshold()  { return this._threshold; }
-  set threshold(v) { this._threshold = Math.max(5, Math.min(100, v)); }
+  set threshold(v) { this._threshold = Math.max(5, Math.min(100, v)); this._baseThreshold = v; }
 
   get linePos()  { return this._linePos; }
   set linePos(v) { this._linePos = Math.max(0.05, Math.min(0.95, v)); }
 
-  // Reset lane dividers to even spacing for given lane count
+  // 重置环境光样本
+  resetAmbientSamples() {
+    this._ambientSamples = [];
+  }
+
   _resetDividers(n) {
     this._laneDividers = [];
     for (let i = 1; i < n; i++) {
@@ -71,7 +87,6 @@ export class FinishLineDetector {
     }
   }
 
-  // Map a blob's vertical center (0–H pixels) to a lane index (0-based)
   _laneFromY(centerY) {
     const relY = centerY / this._H;
     for (let i = 0; i < this._laneDividers.length; i++) {
@@ -87,9 +102,7 @@ export class FinishLineDetector {
     this._laneCount  = laneCount;
     this._cooldowns  = new Array(laneCount).fill(false);
     this._resetDividers(laneCount);
-
-    this._prevSlice = null;  // reset when re-initing
-
+    this._prevSlice = null;
     this._canvas = document.createElement('canvas');
     this._canvas.width  = this._W;
     this._canvas.height = this._H;
@@ -100,6 +113,7 @@ export class FinishLineDetector {
     this.onCrossing = onCrossing;
     this.onLevel    = onLevel;
     this._running   = true;
+    this.resetAmbientSamples();
     this._loop();
   }
 
@@ -108,23 +122,20 @@ export class FinishLineDetector {
   _loop() {
     if (!this._running) return;
 
-    // 计算帧率和自适应跳帧
     const now = performance.now();
     const delta = now - this._lastFrameTime;
     if (this._lastFrameTime > 0) {
       this._fps = Math.round(1000 / delta);
-      // 根据性能模式和实际帧率调整跳帧策略
       if (this._performanceMode === 'high' || this._fps >= 30) {
-        this._adaptiveSkip = 1; // 不跳帧
+        this._adaptiveSkip = 1;
       } else if (this._fps >= 20) {
-        this._adaptiveSkip = 2; // 处理一半帧
+        this._adaptiveSkip = 2;
       } else {
-        this._adaptiveSkip = 3; // 处理三分之一帧
+        this._adaptiveSkip = 3;
       }
     }
     this._lastFrameTime = now;
 
-    // 跳帧逻辑
     this._skipFrames++;
     if (this._skipFrames % this._adaptiveSkip === 0) {
       this._analyze();
@@ -134,11 +145,10 @@ export class FinishLineDetector {
     requestAnimationFrame(() => this._loop());
   }
 
-  // 设置性能模式
   setPerformanceMode(mode) {
-    this._performanceMode = mode; // 'high' | 'balanced' | 'low'
+    this._performanceMode = mode;
     if (mode === 'high') {
-      this._W = 48; // 更宽的检测带
+      this._W = 48;
       this._frameBufferSize = 5;
     } else if (mode === 'balanced') {
       this._W = 48;
@@ -147,33 +157,36 @@ export class FinishLineDetector {
       this._W = 24;
       this._frameBufferSize = 2;
     }
-    // 重新初始化canvas
     if (this._canvas) {
       this._canvas.width = this._W;
       this._canvas.height = this._H;
     }
   }
 
-  // 获取当前性能统计
   getPerformanceStats() {
     return {
       fps: this._fps,
       skipRate: this._adaptiveSkip,
       mode: this._performanceMode,
       detectionWidth: this._W,
-      bufferSize: this._frameBufferSize
+      bufferSize: this._frameBufferSize,
+      ambientLight: this._ambientLight,
+      falseTriggerCount: this._falseTriggerCount
     };
   }
 
-  // Returns true when the raw video pixels are rotated 90° relative to the display.
-  // Happens on iOS: camera always delivers portrait pixels even when phone is landscape.
+  // 获取高精度时间戳（毫秒级）
+  getHighPrecisionTimestamp() {
+    return performance.now();
+  }
+
   _isAxesSwapped() {
     const vw = this._video?.videoWidth  || 0;
     const vh = this._video?.videoHeight || 0;
     const dw = this._dispCanvas?.offsetWidth  || 0;
     const dh = this._dispCanvas?.offsetHeight || 0;
     if (!vw || !vh || !dw || !dh) return false;
-    return (vw < vh) !== (dw < dh);   // one is portrait, the other landscape
+    return (vw < vh) !== (dw < dh);
   }
 
   _analyze() {
@@ -183,28 +196,18 @@ export class FinishLineDetector {
     const vw = this._video.videoWidth  || 640;
     const vh = this._video.videoHeight || 480;
 
-    // When the camera delivers portrait pixels but the display is landscape (common on iOS),
-    // the finish-line axis in raw pixels is Y (not X), and the lane axis is X (not Y).
     const swapped = this._isAxesSwapped();
 
     if (!swapped) {
-      // ── Normal (landscape raw video) ─────────────────
-      // Take a thin vertical strip at the finish-line X position.
       const srcX = Math.max(0, Math.round(this._linePos * vw) - W / 2);
       const srcW = Math.min(W, vw - srcX);
       this._ctx.drawImage(this._video, srcX, 0, Math.max(1, srcW), vh, 0, 0, W, H);
     } else {
-      // ── Portrait raw video in landscape display ───────
-      // Finish-line position maps to a Y position in raw pixels.
-      // Lane axis = X axis of raw video → map to analysis canvas Y axis.
       const srcY = Math.max(0, Math.round(this._linePos * vh) - W / 2);
       const srcH = Math.min(W, vh - srcY);
-      // Draw the horizontal strip rotated 90° so raw-X becomes canvas-Y.
       this._ctx.save();
       this._ctx.translate(W, 0);
       this._ctx.rotate(Math.PI / 2);
-      // After rotation: canvas X→Y, canvas Y→-X+W
-      // drawImage dest (0,0,H,W) in rotated space fills the W×H analysis canvas.
       this._ctx.drawImage(this._video, 0, srcY, vw, Math.max(1, srcH), 0, 0, H, W);
       this._ctx.restore();
     }
@@ -217,13 +220,18 @@ export class FinishLineDetector {
       return;
     }
 
-    // 边缘增强预处理（可选）
     let processedData = slice.data;
     if (this._edgeEnhancement) {
       processedData = this._applyEdgeEnhancement(slice.data, W, H);
     }
 
-    // Motion per pixel row across the narrow strip
+    // 计算环境光强度（用于自适应阈值）
+    this._updateAmbientLight(slice.data, W, H);
+
+    // 自适应阈值调整
+    this._adjustThreshold();
+
+    // Motion per pixel row
     const motionPerRow = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       let rowDiff = 0;
@@ -238,13 +246,11 @@ export class FinishLineDetector {
 
     this._prevSlice.set(slice.data);
 
-    // 多帧平滑 - 添加到缓冲区
     this._frameBuffer.push(motionPerRow);
     if (this._frameBuffer.length > this._frameBufferSize) {
       this._frameBuffer.shift();
     }
 
-    // 使用多帧平均值（减少抖动）
     const smoothedMotion = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       let sum = 0;
@@ -259,7 +265,6 @@ export class FinishLineDetector {
     const level = Math.min(1, total / (H * this._threshold * 2));
     this._lastMotion = level;
 
-    // 运动趋势分析
     this._motionHistory.push(level);
     if (this._motionHistory.length > this._historySize) {
       this._motionHistory.shift();
@@ -269,38 +274,152 @@ export class FinishLineDetector {
     this._lastBlobs = blobs;
     this.onLevel?.(level, blobs);
 
+    // 处理每个检测到的blob
     blobs.forEach(blob => {
       const laneIdx = this._laneFromY(blob.center);
       if (this._cooldowns[laneIdx]) return;
 
-      // 趋势验证：检测是否是真实的上升趋势（减少误触发）
+      // 误触发防护：检查运动强度
+      if (blob.peak < this._minMotionPeak) {
+        this._registerFalseTrigger('low_peak');
+        return;
+      }
+
+      // 趋势验证
       const isTrending = this._isMotionTrending();
       if (!isTrending && blob.peak < this._threshold * 1.2) {
-        return; // 运动不够强或不是趋势性的，忽略
+        return;
       }
 
-      const ts     = performance.now();
-      const diffMs = ts - this._lastCrossingTs;
+      // 获取高精度时间戳
+      const ts = this.getHighPrecisionTimestamp();
 
-      // Fire close-finish callback when two lanes cross within 300ms
-      if (diffMs < 300 && this._lastCrossingLane >= 0 && this._lastCrossingLane !== laneIdx) {
-        this.onCloseFinish?.(this._lastCrossingLane, laneIdx, Math.round(diffMs));
+      // Grace period检查（防止开跑瞬间误触发）
+      const timeSinceLastFalse = ts - this._lastFalseTrigger;
+      if (timeSinceLastFalse < this._gracePeriod) {
+        return;
       }
 
-      this._lastCrossingTs   = ts;
-      this._lastCrossingLane = laneIdx;
-
-      this._cooldowns[laneIdx] = true;
-      this.onCrossing?.(laneIdx, ts);
-      // Reset cooldown after cooldownMs — but only if the lane isn't permanently locked
-      // cooldownMs is set higher (3000ms) for multi-lap races to prevent double-counting
-      setTimeout(() => {
-        if (!this._laneDone.has(laneIdx)) this._cooldowns[laneIdx] = false;
-      }, this.cooldownMs);
+      // 添加到冲线队列（用于精确排序）
+      this._addToCrossingQueue(laneIdx, ts, blob.peak);
     });
   }
 
-  // 边缘增强算法（Sobel算子简化版）
+  // 更新环境光强度
+  _updateAmbientLight(data, W, H) {
+    let sum = 0;
+    const sampleStep = 4; // 每4个像素采样一次
+    let count = 0;
+
+    for (let y = 0; y < H; y += 2) {
+      for (let x = 0; x < W; x += 2) {
+        const i = (y * W + x) * 4;
+        sum += data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+        count++;
+      }
+    }
+
+    const avgBrightness = sum / count;
+
+    // 添加到样本池
+    this._ambientSamples.push(avgBrightness);
+    if (this._ambientSamples.length > this._maxAmbientSamples) {
+      this._ambientSamples.shift();
+    }
+
+    // 计算滑动平均
+    this._ambientLight = this._ambientSamples.reduce((a, b) => a + b, 0) / this._ambientSamples.length;
+  }
+
+  // 根据环境光自适应调整阈值
+  _adjustThreshold() {
+    if (this._ambientSamples.length < 10) return;
+
+    const normalizedAmbient = this._ambientLight / 255;
+
+    // 光线越暗，灵敏度越低（阈值越高）
+    // 光线越亮，灵敏度越高（阈值越低）
+    const adjustmentFactor = 1 + (0.5 - normalizedAmbient) * 0.4;
+
+    // 限制调整范围在0.6-1.4倍
+    const factor = Math.max(0.6, Math.min(1.4, adjustmentFactor));
+    this._threshold = Math.round(this._baseThreshold * factor);
+  }
+
+  // 记录误触发
+  _registerFalseTrigger(reason) {
+    const now = performance.now();
+    // 限制记录频率（同一区域内1秒内只记录一次）
+    if (now - this._lastFalseTrigger < 1000) return;
+
+    this._falseTriggerCount++;
+    this._lastFalseTrigger = now;
+  }
+
+  // 添加到冲线队列
+  _addToCrossingQueue(laneIdx, timestamp, peak) {
+    this._crossingQueue.push({
+      laneIdx,
+      timestamp,
+      peak,
+      addedAt: performance.now()
+    });
+
+    // 启动处理定时器（批量处理队列中的事件）
+    if (!this._crossingProcessTimer) {
+      this._processCrossingQueue();
+    }
+  }
+
+  // 处理冲线队列（精确排序后触发）
+  _processCrossingQueue() {
+    if (this._crossingQueue.length === 0) {
+      this._crossingProcessTimer = null;
+      return;
+    }
+
+    // 按时间戳排序
+    this._crossingQueue.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 获取当前最早的有效事件
+    const now = performance.now();
+    const event = this._crossingQueue.shift();
+
+    // 检查是否与上次冲线时间冲突（同道次）
+    const sameLaneLastTs = this._lastCrossingTs[laneIdx] || -Infinity;
+    if (now - sameLaneLastTs < this._minGapBetweenLane) {
+      // 忽略这次冲线（太接近，可能是重复检测）
+      this._processCrossingQueue();
+      return;
+    }
+
+    // 更新最后冲线时间
+    this._lastCrossingTs[laneIdx] = event.timestamp;
+
+    const diffMs = event.timestamp - (this._lastCrossingTs['__global'] || event.timestamp);
+
+    // 检测接近冲线（两人差距<300ms）
+    if (diffMs < 300 && this._lastCrossingLane >= 0 && this._lastCrossingLane !== event.laneIdx) {
+      this.onCloseFinish?.(this._lastCrossingLane, event.laneIdx, Math.round(diffMs));
+    }
+
+    this._lastCrossingTs['__global'] = event.timestamp;
+    this._lastCrossingLane = event.laneIdx;
+
+    // 设置冷却
+    this._cooldowns[event.laneIdx] = true;
+    setTimeout(() => {
+      if (!this._laneDone.has(event.laneIdx)) this._cooldowns[event.laneIdx] = false;
+    }, this.cooldownMs);
+
+    // 触发回调
+    this.onCrossing?.(event.laneIdx, event.timestamp);
+
+    // 继续处理队列（每次只处理一个）
+    this._crossingProcessTimer = setTimeout(() => this._processCrossingQueue(), 10);
+  }
+
+  // 边缘增强算法
   _applyEdgeEnhancement(data, W, H) {
     const enhanced = new Uint8ClampedArray(data.length);
     enhanced.set(data);
@@ -309,14 +428,12 @@ export class FinishLineDetector {
       for (let x = 1; x < W - 1; x++) {
         const i = (y * W + x) * 4;
 
-        // 简化的Sobel算子（仅检测水平边缘）
         const gx =
           -data[((y-1)*W + (x-1))*4] - 2*data[((y-1)*W + x)*4] - data[((y-1)*W + (x+1))*4] +
            data[((y+1)*W + (x-1))*4] + 2*data[((y+1)*W + x)*4] + data[((y+1)*W + (x+1))*4];
 
         const magnitude = Math.min(255, Math.abs(gx) * 0.5);
 
-        // 增强边缘
         enhanced[i] = Math.min(255, data[i] + magnitude * 0.3);
         enhanced[i+1] = Math.min(255, data[i+1] + magnitude * 0.3);
         enhanced[i+2] = Math.min(255, data[i+2] + magnitude * 0.3);
@@ -326,9 +443,8 @@ export class FinishLineDetector {
     return enhanced;
   }
 
-  // 检测运动是否呈上升趋势
   _isMotionTrending() {
-    if (this._motionHistory.length < 3) return true; // 数据不足，假设有效
+    if (this._motionHistory.length < 3) return true;
 
     const recent = this._motionHistory.slice(-3);
     let rising = 0;
@@ -336,12 +452,12 @@ export class FinishLineDetector {
       if (recent[i] > recent[i-1]) rising++;
     }
 
-    return rising >= 2; // 至少2次上升
+    return rising >= 2;
   }
 
   _detectBlobs(motionPerRow, H) {
     const THRESH  = this._threshold * 0.7;
-    const MIN_PX  = Math.floor(H * 0.08);  // blob must be ≥8% of height
+    const MIN_PX  = Math.floor(H * 0.08);
 
     const blobs = [];
     let start = -1;
@@ -369,8 +485,6 @@ export class FinishLineDetector {
   _drawOverlay() {
     if (!this._dispCanvas) return;
 
-    // ── Sync canvas buffer to current CSS layout size every frame ──
-    // This is the only reliable way to handle orientation changes on all devices.
     const dpr = window.devicePixelRatio || 1;
     const cssW = this._dispCanvas.offsetWidth;
     const cssH = this._dispCanvas.offsetHeight;
@@ -380,10 +494,10 @@ export class FinishLineDetector {
       if (this._dispCanvas.width !== needW || this._dispCanvas.height !== needH) {
         this._dispCanvas.width  = needW;
         this._dispCanvas.height = needH;
-        this._prevSlice = null;   // reset motion diff after resize
+        this._prevSlice = null;
       }
     } else {
-      return;  // canvas not laid out yet (hidden parent)
+      return;
     }
 
     const dW  = this._dispCanvas.width;
@@ -392,18 +506,15 @@ export class FinishLineDetector {
 
     ctx.clearRect(0, 0, dW, dH);
 
-    // ── Draw lane dividers (horizontal) ──
     this._drawLaneDividers(ctx, dW, dH, dpr);
 
     const lineX  = Math.floor(this._linePos * dW);
     const motion = this._lastMotion;
     const col    = motion > 0.6 ? '#ff1744' : motion > 0.25 ? '#ffd600' : '#00e676';
 
-    // Semi-transparent vertical band behind line
     ctx.fillStyle = `${col}22`;
     ctx.fillRect(lineX - 2, 0, 4, dH);
 
-    // Glow line
     ctx.shadowColor = col;
     ctx.shadowBlur  = 16 * dpr;
     ctx.strokeStyle = col;
@@ -416,7 +527,6 @@ export class FinishLineDetector {
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 
-    // "终点线" pill label at top
     const fontSize = Math.max(11, 13 * dpr);
     ctx.font = `bold ${fontSize}px -apple-system,sans-serif`;
     ctx.textAlign = 'center';
@@ -431,7 +541,6 @@ export class FinishLineDetector {
     ctx.fillStyle = '#000';
     ctx.fillText('终点线', lineX, labelY + labelH - 6 * dpr);
 
-    // Drag handle (circle in the middle of the line)
     const cy = dH / 2;
     const r  = 18 * dpr;
     ctx.fillStyle = col;
@@ -442,7 +551,6 @@ export class FinishLineDetector {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Arrows inside handle ← →
     ctx.fillStyle = '#000';
     ctx.font = `bold ${Math.round(14 * dpr)}px sans-serif`;
     ctx.textAlign = 'center';
@@ -450,19 +558,16 @@ export class FinishLineDetector {
     ctx.fillText('↔', lineX, cy);
     ctx.textBaseline = 'alphabetic';
 
-    // Motion bar (right edge)
     const barH = Math.floor(motion * dH * 0.8);
     ctx.fillStyle = `rgba(0,230,118,${0.25 + motion * 0.55})`;
     ctx.fillRect(dW - 10 * dpr, dH - barH, 8 * dpr, barH);
 
-    // Highlight active blobs on the finish line
     this._lastBlobs.forEach(blob => {
       const bTop = (blob.top    / this._H) * dH;
       const bBot = (blob.bottom / this._H) * dH;
       const lane = this._laneFromY(blob.center) + 1;
       ctx.fillStyle = 'rgba(255,23,68,0.35)';
       ctx.fillRect(lineX - 12 * dpr, bTop, 24 * dpr, bBot - bTop);
-      // Lane number tag
       ctx.fillStyle = '#ff1744';
       ctx.font = `bold ${Math.round(12 * dpr)}px sans-serif`;
       ctx.textAlign = 'center';
@@ -482,7 +587,6 @@ export class FinishLineDetector {
     this._laneDividers.forEach((divY, i) => {
       const y = Math.floor(divY * dH);
 
-      // Horizontal divider line
       ctx.strokeStyle = 'rgba(255,255,255,0.45)';
       ctx.lineWidth   = 1.5 * dpr;
       ctx.setLineDash([8 * dpr, 5 * dpr]);
@@ -492,7 +596,6 @@ export class FinishLineDetector {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Drag handle circle
       ctx.fillStyle   = 'rgba(255,255,255,0.75)';
       ctx.shadowColor = 'rgba(255,255,255,0.4)';
       ctx.shadowBlur  = 6 * dpr;
@@ -501,7 +604,6 @@ export class FinishLineDetector {
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      // ↕ arrow
       ctx.fillStyle = '#000';
       ctx.font = `bold ${Math.round(11 * dpr)}px sans-serif`;
       ctx.textAlign = 'center';
@@ -510,7 +612,6 @@ export class FinishLineDetector {
       ctx.textBaseline = 'alphabetic';
     });
 
-    // Lane number labels (left side, between dividers)
     ctx.font      = `bold ${Math.round(11 * dpr)}px -apple-system,sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -521,13 +622,11 @@ export class FinishLineDetector {
       const midY    = (topY + bottomY) / 2;
       const done    = this._laneDone.has(lane);
 
-      // Tint done lanes with a soft green strip
       if (done) {
         ctx.fillStyle = 'rgba(0,230,118,0.08)';
         ctx.fillRect(0, topY, dW, bottomY - topY);
       }
 
-      // Lane number pill
       const laneLabel = `${lane + 1}道`;
       const lw = ctx.measureText(laneLabel).width + 10 * dpr;
       const lh = 16 * dpr;
@@ -538,7 +637,6 @@ export class FinishLineDetector {
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.fillText(laneLabel, 9 * dpr, midY);
 
-      // If done, show finish time on the right side of the lane
       if (done && this._laneFinishLabel[lane]) {
         const timeLabel = this._laneFinishLabel[lane];
         ctx.textAlign = 'right';
@@ -560,7 +658,6 @@ export class FinishLineDetector {
     ctx.restore();
   }
 
-  // Capture current video frame + overlay as data URL (called at crossing moment)
   captureFrame(width = 640, height = 360, label = null) {
     if (!this._video || this._video.readyState < 2) return null;
     try {
@@ -569,7 +666,6 @@ export class FinishLineDetector {
       const ctx = c.getContext('2d');
       ctx.drawImage(this._video, 0, 0, width, height);
 
-      // Draw lane dividers (white dashed horizontal lines)
       ctx.strokeStyle = 'rgba(255,255,255,0.65)';
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([6, 4]);
@@ -579,7 +675,6 @@ export class FinishLineDetector {
       }
       ctx.setLineDash([]);
 
-      // Draw finish line (red dashed vertical)
       const lx = Math.round(this._linePos * width);
       ctx.strokeStyle = 'rgba(255,23,68,0.95)';
       ctx.lineWidth   = 2.5;
@@ -587,7 +682,6 @@ export class FinishLineDetector {
       ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, height); ctx.stroke();
       ctx.setLineDash([]);
 
-      // Draw label bar (name + time) at bottom
       if (label) {
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
         ctx.fillRect(0, height - 36, width, 36);
@@ -602,9 +696,6 @@ export class FinishLineDetector {
     } catch { return null; }
   }
 
-  // Auto-detect lane count and divider positions from a full video frame.
-  // Works with both landscape raw video AND portrait raw video (iOS in landscape mode).
-  // Returns { lanes, dividers } on success, or null if detection failed.
   autoDetectLanes(maxLanes = 8) {
     if (!this._video || this._video.readyState < 2) return null;
 
@@ -615,14 +706,11 @@ export class FinishLineDetector {
     actx.drawImage(this._video, 0, 0, AW, AH);
     const img  = actx.getImageData(0, 0, AW, AH).data;
 
-    // When camera delivers portrait pixels in landscape mode (iOS), lane lines
-    // appear as COLUMNS (not rows) in the raw image → analyze column brightness.
     const swapped = this._isAxesSwapped();
-    const N       = swapped ? AW : AH;   // number of slices along the lane axis
+    const N       = swapped ? AW : AH;
 
     const sliceBrightness = new Float32Array(N);
     if (!swapped) {
-      // Lane axis = Y (rows). Average brightness across center 60% of X.
       const x0 = Math.floor(AW * 0.20), x1 = Math.floor(AW * 0.80);
       for (let y = 0; y < AH; y++) {
         let s = 0;
@@ -633,7 +721,6 @@ export class FinishLineDetector {
         sliceBrightness[y] = s / (x1 - x0);
       }
     } else {
-      // Lane axis = X (columns). Average brightness across center 60% of Y.
       const y0 = Math.floor(AH * 0.20), y1 = Math.floor(AH * 0.80);
       for (let x = 0; x < AW; x++) {
         let s = 0;
@@ -645,7 +732,6 @@ export class FinishLineDetector {
       }
     }
 
-    // 3-slice box-filter smoothing
     const smoothed = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       smoothed[i] = (sliceBrightness[Math.max(0, i-1)] +
@@ -653,13 +739,11 @@ export class FinishLineDetector {
                      sliceBrightness[Math.min(N-1, i+1)]) / 3;
     }
 
-    // Adaptive threshold: mean + 30% of dynamic range
     let mean = 0, maxB = 0;
     for (let i = 0; i < N; i++) { mean += smoothed[i]; if (smoothed[i] > maxB) maxB = smoothed[i]; }
     mean /= N;
-    const thresh = mean + (maxB - mean) * 0.30;   // 30% → more lenient
+    const thresh = mean + (maxB - mean) * 0.30;
 
-    // Local-maxima peaks with minimum spacing
     const MIN_GAP = Math.max(3, Math.floor(N / (maxLanes + 1)));
     const peaks = [];
     for (let i = 1; i < N - 1; i++) {
@@ -676,36 +760,32 @@ export class FinishLineDetector {
 
     const detectedLanes = peaks.length + 1;
     this._laneCount    = detectedLanes;
-    this._laneDividers = peaks.map(p => p / N);  // 0–1 fractions along the lane axis
+    this._laneDividers = peaks.map(p => p / N);
     this._cooldowns    = new Array(detectedLanes).fill(false);
     return { lanes: detectedLanes, dividers: this._laneDividers.slice() };
   }
 
-  // Allow user to reposition finish line and lane dividers by touch/click
   bindDrag(displayCanvas) {
     displayCanvas.style.touchAction = 'none';
     displayCanvas.style.cursor = 'grab';
 
-    let dragging = null; // 'line' | { divider: index }
+    let dragging = null;
 
     const hitTest = (clientX, clientY) => {
       const rect = displayCanvas.getBoundingClientRect();
       const fx = (clientX - rect.left) / rect.width;
       const fy = (clientY - rect.top)  / rect.height;
 
-      // Check finish line handle (circle at vertical centre)
       const lineDist = Math.abs(fx - this._linePos);
       const lineCyDist = Math.abs(fy - 0.5);
       if (lineDist < 0.06 && lineCyDist < 0.07) return 'line';
 
-      // Check lane divider handles (centred horizontally, at divider Y)
       for (let i = 0; i < this._laneDividers.length; i++) {
         const dyDist = Math.abs(fy - this._laneDividers[i]);
         const dxDist = Math.abs(fx - 0.5);
         if (dyDist < 0.06 && dxDist < 0.12) return { divider: i };
       }
 
-      // Anywhere near the vertical finish line → drag line
       if (lineDist < 0.08) return 'line';
 
       return null;

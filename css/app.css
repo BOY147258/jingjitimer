@@ -1495,6 +1495,45 @@ input[type="text"]:focus { border-color: var(--accent); }
   color: var(--accent);
 }
 
+/* ── Quick templates ───────────────────────────── */
+.quick-templates {
+  margin: 16px 0;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+}
+.qt-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.qt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.qt-btn {
+  padding: 10px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.qt-btn:hover {
+  border-color: var(--accent);
+  background: rgba(255,98,0,0.1);
+  color: var(--accent);
+}
+.qt-btn:active {
+  transform: scale(0.97);
+}
+
 /* ── Finish split card ─────────────────────────────── */
 .fs-split-card {
   opacity: .85;

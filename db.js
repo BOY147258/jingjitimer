@@ -46,6 +46,38 @@ export function insertRecord(name, record) {
   return record;
 }
 
+// 批量插入（优化大量数据写入）
+export function insertRecordsBatch(name, records) {
+  const data = readDB(name);
+  const startId = nextId(data);
+  const now = Date.now();
+
+  records.forEach((record, index) => {
+    record.id = startId + index;
+    record.createdAt = now;
+    data.push(record);
+  });
+
+  writeDB(name, data);
+  return records;
+}
+
+// 批量更新（优化大量数据更新）
+export function updateRecordsBatch(name, updates) {
+  const data = readDB(name);
+  const updateMap = new Map(updates.map(u => [u.id, u]));
+
+  data.forEach((record, index) => {
+    const update = updateMap.get(record.id);
+    if (update) {
+      data[index] = { ...record, ...update, updatedAt: Date.now() };
+    }
+  });
+
+  writeDB(name, data);
+  return data;
+}
+
 export function updateRecord(name, id, patch) {
   const data = readDB(name);
   const idx = data.findIndex(r => r.id === Number(id));
@@ -62,4 +94,62 @@ export function deleteRecord(name, id) {
   data.splice(idx, 1);
   writeDB(name, data);
   return true;
+}
+
+// 批量删除
+export function deleteRecordsBatch(name, ids) {
+  const data = readDB(name);
+  const idSet = new Set(ids.map(id => Number(id)));
+  const filtered = data.filter(r => !idSet.has(r.id));
+  writeDB(name, filtered);
+  return filtered.length !== data.length;
+}
+
+// 条件查询
+export function queryRecords(name, filterFn) {
+  const data = readDB(name);
+  return filterFn ? data.filter(filterFn) : data;
+}
+
+// 分页查询（优化大量数据）
+export function queryRecordsPaginated(name, { page = 1, pageSize = 20, filterFn = null, sortFn = null }) {
+  let data = readDB(name);
+
+  if (filterFn) {
+    data = data.filter(filterFn);
+  }
+
+  if (sortFn) {
+    data.sort(sortFn);
+  }
+
+  const total = data.length;
+  const totalPages = Math.ceil(total / pageSize);
+  const start = (page - 1) * pageSize;
+  const items = data.slice(start, start + pageSize);
+
+  return {
+    items,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1
+    }
+  };
+}
+
+// 数据统计
+export function getStats(name) {
+  const data = readDB(name);
+  return {
+    total: data.length,
+    createdToday: data.filter(r => {
+      const today = new Date().setHours(0, 0, 0, 0);
+      return r.createdAt >= today;
+    }).length,
+    lastCreated: data.length > 0 ? data[data.length - 1].createdAt : null
+  };
 }

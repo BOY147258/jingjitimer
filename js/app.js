@@ -334,6 +334,31 @@ function recomputeLaps() {
   saveSettings();
 }
 
+// 快速应用模板
+function applyQuickTemplate(distance, lanes) {
+  state.distance = distance;
+  state.laneCount = lanes;
+
+  // 更新UI
+  const distSel = $('race-distance');
+  if (distSel) {
+    distSel.value = String(distance);
+  }
+  DOM.laneCountDisp.textContent = lanes;
+
+  // 更新圈数
+  recomputeLaps();
+
+  // 重新构建道次
+  buildLaneInputs();
+
+  // 保存并广播
+  saveSettings();
+  broadcastConfig();
+
+  showToast(`已应用 ${distance}m ${lanes}道模板`, 'success');
+}
+
 // Read athlete names live from input fields (no need to call buildLanes first)
 function getCurrentRoster() {
   return Array.from({ length: state.laneCount }, (_, i) => {
@@ -1680,12 +1705,8 @@ function goHome() {
   if (state.raceStarted && !state.raceFinished) {
     if (!confirm('比赛进行中，确定返回主页？当前计时将丢失。')) return;
   }
-  // Stop everything
-  timer.stop(); timer.reset();
-  detector.stop();
-  if (mainStream) { mainStream.getTracks().forEach(t => t.stop()); mainStream = null; }
-  sync.disconnect();
-  recorder.stop();
+  // 执行完整清理
+  performCleanup();
 
   // Reset state
   state.role = 'solo'; state.raceStarted = false; state.raceFinished = false;
@@ -1699,6 +1720,66 @@ function goHome() {
   document.querySelectorAll('.fs-main, [id^="tab-finish"]').forEach(p => p.classList.add('hidden'));
   DOM.roleOverlay.classList.remove('hidden');
   DOM.appTitle.innerHTML = '<span class="brand-jj">竞迹</span>';
+}
+
+// 完整资源清理（防止内存泄漏）
+function performCleanup() {
+  // 停止计时器
+  timer.stop();
+  timer.reset();
+  timer.removeAllListeners();
+
+  // 停止检测器
+  detector.stop();
+  detector.resetLaneDone();
+
+  // 停止媒体流
+  if (mainStream) {
+    mainStream.getTracks().forEach(t => t.stop());
+    mainStream = null;
+  }
+
+  // 断开同步连接
+  sync.disconnect();
+
+  // 停止录像
+  if (recorder.recording) {
+    recorder.stop();
+  }
+
+  // 清理视频元素
+  if (DOM.raceVideo) {
+    DOM.raceVideo.srcObject = null;
+  }
+  if (DOM.finishVideoFs) {
+    DOM.finishVideoFs.srcObject = null;
+  }
+
+  // 清理诊断测试的媒体流
+  if (window._diagCamStream) {
+    window._diagCamStream.getTracks().forEach(t => t.stop());
+    window._diagCamStream = null;
+  }
+  if (window._diagMicStream) {
+    window._diagMicStream.getTracks().forEach(t => t.stop());
+    window._diagMicStream = null;
+  }
+
+  // 清理Canvas
+  if (DOM.raceCanvas) {
+    const ctx = DOM.raceCanvas.getContext('2d');
+    ctx?.clearRect(0, 0, DOM.raceCanvas.width, DOM.raceCanvas.height);
+  }
+
+  // 清理历史记录（只保留最近10条）
+  try {
+    const history = JSON.parse(localStorage.getItem('race-history') || '[]');
+    if (history.length > 10) {
+      localStorage.setItem('race-history', JSON.stringify(history.slice(-10)));
+    }
+  } catch {}
+
+  console.log('[竞迹] 资源清理完成');
 }
 
 function resetRace() {
@@ -2178,6 +2259,7 @@ function loadHistory() { renderHistory(getHistory()); }
 // ── 保存成绩到管理后台 localStorage & session history ───
 function saveGroupToHistory(race) {
   const ADMIN_KEY = 'jingjitimer-history';
+  const BACKUP_KEY = 'jingjitimer-backup';
   const group = {
     id:       String(race.id || Date.now()),
     date:     new Date().toISOString(),
@@ -2192,6 +2274,57 @@ function saveGroupToHistory(race) {
       .map(l => ({
         laneIdx:  state.lanes.indexOf(l),
         name:     l.name || `${state.lanes.indexOf(l)+1}道`,
+        number:   l.number || '',
+        team:     l.team || '',
+        time:     l.time,
+        dnf:      l.dnf || false,
+        rank:     l.rank || null,
+      }))
+  };
+
+  // 保存到管理后台localStorage
+  try {
+    const existing = JSON.parse(localStorage.getItem(ADMIN_KEY) || '[]');
+    existing.unshift(group);
+    if (existing.length > 200) existing.length = 200;
+    localStorage.setItem(ADMIN_KEY, JSON.stringify(existing));
+
+    // 自动备份到独立key（防止主存储损坏）
+    const backup = JSON.parse(localStorage.getItem(BACKUP_KEY) || '[]');
+    backup.unshift(group);
+    if (backup.length > 500) backup.length = 500;
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(backup));
+  } catch (e) {
+    console.warn('Failed to save group history', e);
+  }
+
+  // 添加到会话历史
+  state.sessionHistory.unshift(group);
+  if (state.sessionHistory.length > 50) state.sessionHistory.length = 50;
+
+  // 广播成绩到已连接的观察端
+  if (state.role === 'start' && sync.connected) {
+    sync.send('RACE_GROUP_RESULT', group);
+  }
+}
+
+// 从备份恢复数据
+function restoreFromBackup() {
+  const BACKUP_KEY = 'jingjitimer-backup';
+  const ADMIN_KEY = 'jingjitimer-history';
+
+  try {
+    const backup = JSON.parse(localStorage.getItem(BACKUP_KEY) || '[]');
+    if (backup.length > 0) {
+      // 恢复到主存储
+      localStorage.setItem(ADMIN_KEY, JSON.stringify(backup.slice(0, 200)));
+      return backup.length;
+    }
+  } catch (e) {
+    console.warn('Failed to restore from backup', e);
+  }
+  return 0;
+}
         raceTime: l.time,
         isDNF:    !!l.dnf,
         rank:     l.rank,
@@ -2706,6 +2839,15 @@ function attachEventListeners() {
   rosterFileInput?.addEventListener('change', e => {
     handleRosterImport(e.target.files[0]);
     e.target.value = '';  // allow re-import of same file
+  });
+
+  // Quick template buttons
+  document.querySelectorAll('.qt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const distance = parseInt(btn.dataset.distance);
+      const lanes = parseInt(btn.dataset.lanes);
+      applyQuickTemplate(distance, lanes);
+    });
   });
 
   // Start mode
