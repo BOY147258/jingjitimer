@@ -8,7 +8,7 @@ export class FinishLineDetector {
     this._dispCtx           = null;
     this._prevSlice         = null;
     this._linePos           = 0.5;
-    this._threshold         = 14;   // lower = more sensitive; user can adjust via slider
+    this._threshold         = 12;   // lower = more sensitive; user can adjust via slider
     this._running           = false;
     this._laneCount         = 4;
     this._laneDividers      = [];
@@ -21,14 +21,14 @@ export class FinishLineDetector {
     this.onLevel            = null;  // cb(level 0–1, blobsArray)
     this.onCloseFinish      = null;  // cb(firstLane, secondLane, diffMs) — fired when gap < 300ms
     // Analysis canvas: narrow strip centered on finish line (wider = more robust)
-    this._W = 32;
-    this._H = 90;
+    this._W = 48;
+    this._H = 120;
     // Lanes permanently locked after first crossing (cleared on race reset)
     this._laneDone     = new Set();
     // Optional per-lane finish time strings for overlay display
     this._laneFinishLabel = {};
     // Cooldown between crossings per lane (ms). Increase for multi-lap to prevent double-count.
-    this.cooldownMs    = 1500;
+    this.cooldownMs    = 1200;
     // 性能优化相关
     this._frameBuffer      = [];      // 帧缓冲区，用于多帧分析
     this._frameBufferSize  = 3;       // 缓冲区大小
@@ -141,7 +141,7 @@ export class FinishLineDetector {
       this._W = 48; // 更宽的检测带
       this._frameBufferSize = 5;
     } else if (mode === 'balanced') {
-      this._W = 32;
+      this._W = 48;
       this._frameBufferSize = 3;
     } else {
       this._W = 24;

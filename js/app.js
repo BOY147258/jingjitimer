@@ -56,6 +56,82 @@ const recorder = new VideoRecorder();
 const sync     = new Sync();
 const detector = new FinishLineDetector();
 
+// ── 专业发令音效生成器 V2.0 ────────────────────────────
+class StarterAudioGenerator {
+  constructor() { this.audioCtx = null; this.initialized = false; }
+  init() {
+    if (this.initialized) return;
+    try { this.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); this.initialized = true; } catch {}
+  }
+  async playGeJiuWei() { // "各就位" - 升调合成音
+    this.init(); if (!this.audioCtx) return;
+    const ctx = this.audioCtx, now = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(440,now); osc.frequency.setValueAtTime(440,now+0.1); osc.frequency.setValueAtTime(523,now+0.15); osc.frequency.setValueAtTime(659,now+0.25);
+    gain.gain.setValueAtTime(0,now); gain.gain.linearRampToValueAtTime(0.85,now+0.05); gain.gain.setValueAtTime(0.85,now+0.35); gain.gain.exponentialRampToValueAtTime(0.001,now+0.5);
+    osc.connect(gain); gain.connect(ctx.destination); osc.start(now); osc.stop(now+0.5);
+    await new Promise(r=>setTimeout(r,500));
+  }
+  async playYuBei() { // "预备" - 升调合成音
+    this.init(); if (!this.audioCtx) return;
+    const ctx = this.audioCtx, now = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(523,now); osc.frequency.setValueAtTime(523,now+0.1); osc.frequency.setValueAtTime(659,now+0.2); osc.frequency.setValueAtTime(784,now+0.3);
+    gain.gain.setValueAtTime(0,now); gain.gain.linearRampToValueAtTime(0.85,now+0.05); gain.gain.setValueAtTime(0.85,now+0.4); gain.gain.exponentialRampToValueAtTime(0.001,now+0.55);
+    osc.connect(gain); gain.connect(ctx.destination); osc.start(now); osc.stop(now+0.55);
+    await new Promise(r=>setTimeout(r,550));
+  }
+  async playGunshot() { // 专业电子发令枪声
+    this.init(); if (!this.audioCtx) return;
+    const ctx = this.audioCtx, now = ctx.currentTime;
+    // 1. 初始瞬态爆破
+    const nb = ctx.createBuffer(1,ctx.sampleRate*0.02,ctx.sampleRate), nd = nb.getChannelData(0);
+    for(let i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*Math.exp(-i/(ctx.sampleRate*0.005));
+    const ns = ctx.createBufferSource(); ns.buffer = nb;
+    const nf = ctx.createBiquadFilter(); nf.type='highpass'; nf.frequency.value=2000;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.9,now); ng.gain.exponentialRampToValueAtTime(0.001,now+0.02);
+    ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
+    // 2. 主枪声
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), mg = ctx.createGain(), lp = ctx.createBiquadFilter();
+    o1.type='sawtooth'; o1.frequency.setValueAtTime(150,now); o1.frequency.exponentialRampToValueAtTime(80,now+0.05);
+    o2.type='square'; o2.frequency.setValueAtTime(60,now); o2.frequency.exponentialRampToValueAtTime(40,now+0.08);
+    lp.type='lowpass'; lp.frequency.value=500;
+    mg.gain.setValueAtTime(0.7,now); mg.gain.exponentialRampToValueAtTime(0.001,now+0.15);
+    o1.connect(lp); o2.connect(lp); lp.connect(mg); mg.connect(ctx.destination);
+    // 3. 混响尾音
+    const ro = ctx.createOscillator(), rg = ctx.createGain();
+    ro.type='sine'; ro.frequency.setValueAtTime(80,now+0.01); ro.frequency.exponentialRampToValueAtTime(30,now+0.5);
+    rg.gain.setValueAtTime(0,now); rg.gain.linearRampToValueAtTime(0.3,now+0.02); rg.gain.exponentialRampToValueAtTime(0.001,now+0.6);
+    ro.connect(rg); rg.connect(ctx.destination);
+    ns.start(now); o1.start(now); o2.start(now); ro.start(now+0.01);
+    ns.stop(now+0.03); o1.stop(now+0.2); o2.stop(now+0.2); ro.stop(now+0.6);
+    await new Promise(r=>setTimeout(r,600));
+  }
+  async playRecall() { // 召回信号
+    this.init(); if (!this.audioCtx) return;
+    const ctx = this.audioCtx;
+    for(let i=0;i<5;i++){
+      const now = ctx.currentTime+i*0.15, osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type='sine'; osc.frequency.value=660;
+      g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.08);
+      osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now+0.1);
+    }
+    await new Promise(r=>setTimeout(r,800));
+  }
+  async playVictory() { // 胜利音效
+    this.init(); if (!this.audioCtx) return;
+    const ctx = this.audioCtx, notes=[1047,1319,1568];
+    notes.forEach((n,i)=>{
+      const now = ctx.currentTime+i*0.18, osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type='sine'; osc.frequency.value=n;
+      g.gain.setValueAtTime(0.4,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.2);
+      osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now+0.25);
+    });
+    await new Promise(r=>setTimeout(r,600));
+  }
+}
+const starterAudio = new StarterAudioGenerator();
+
 // ── Tone generator (no library needed) ────────────────
 let _audioCtx;
 function beep(freq = 880, durationMs = 100, vol = 0.4) {
@@ -627,7 +703,7 @@ function registerSyncEvents() {
         const btn = $(`fs-btn-done-${i}`);
         if (btn) btn.disabled = false;
       }
-      for (let i = 0; i < 5; i++) setTimeout(() => beep(660, 60), i * 110);
+      starterAudio.playRecall();
       showToast('⚠️ 比赛召回，等待重新发令', 'warn');
     }
     if (state.role === 'observer') {
@@ -1007,7 +1083,7 @@ function abortRace() {
   if (!state.raceStarted || state.raceFinished) return;
 
   // Five rapid beeps = recall signal
-  for (let i = 0; i < 5; i++) setTimeout(() => beep(660, 60), i * 110);
+  starterAudio.playRecall();
   if (navigator.vibrate) navigator.vibrate([80, 40, 80, 40, 80, 40, 80, 40, 80]);
 
   state.raceStarted  = false;
@@ -1256,12 +1332,38 @@ function beginRace() {
     if (!ok) return;  // user chose to go back and fix
   }
 
-  state.raceStarted  = true;
+  // 使用专业发令音效序列
+  _runProfessionalStarterSequence();
+}
+
+async function _runProfessionalStarterSequence() {
+  const isLong = state.distance > 400;
+  state.raceStarted = true;
   state.raceFinished = false;
   state.raceStartServerTime = sync.serverNow();
   _lastCrossingForArb = null;
 
-  startBeep();
+  try {
+    // 各就位
+    DOM.timerSub.textContent = '📢 各就位...';
+    await starterAudio.playGeJiuWei();
+
+    if (!isLong) {
+      // 短跑: 等2秒 → 预备
+      await new Promise(r => setTimeout(r, 2000));
+      DOM.timerSub.textContent = '📢 预备...';
+      await starterAudio.playYuBei();
+      // 等1.5~2.5秒随机 → 枪声
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000));
+    } else {
+      // 长跑: 等2~3秒 → 直接枪声
+      await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+    }
+    // 枪声 = 计时开始
+    DOM.timerSub.textContent = '🔫 枪响！';
+    await starterAudio.playGunshot();
+  } catch {}
+
   if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 200]);
   timer.start();
   DOM.timerDisplay.classList.add('running');
@@ -1284,21 +1386,13 @@ function beginRace() {
   // Solo mode: stop preview loop first, then start with crossing callbacks
   if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
     detector.stop();  // must stop preview loop before starting detection loop
-    // Grace period:
-    //   Multi-lap → flat 8 seconds. Enough to suppress false-start triggers (athletes
-    //   getting into position, gun echo, vibration). Works for ALL speeds: WR sprinter
-    //   clears 200 m in 19 s; primary-school walker takes 3+ min. Both >> 8 s. ✓
-    //   Single-lap → WR-based (need longer protection since finish = first crossing).
-    const graceMs = state.lapCount > 1
-      ? 8000
-      : Math.round(minRaceGraceMs(state.distance) * 0.70);
+    const graceMs = state.lapCount > 1 ? 8000 : Math.round(minRaceGraceMs(state.distance) * 0.70);
     const graceUntil = performance.now() + graceMs;
-    // For multi-lap: use longer cooldown to prevent double-counting same lap crossing
     detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
     DOM.timerSub.textContent = '📷 保护期 ' + Math.ceil(graceMs / 1000) + 's...';
     detector.start(
       (laneIdx) => {
-        if (performance.now() < graceUntil) return; // ignore motion during warmup / race-start false trigger
+        if (performance.now() < graceUntil) return;
         if (laneIdx < state.laneCount) finishLane(laneIdx);
       },
       (level) => {
@@ -1308,9 +1402,7 @@ function beginRace() {
           return;
         }
         const pct = Math.min(100, level * 100);
-        DOM.timerSub.textContent = level > 0.3
-          ? `🔴 冲线检测 (${Math.round(pct)}%)`
-          : `🟢 终点监听中`;
+        DOM.timerSub.textContent = level > 0.3 ? `🔴 冲线检测 (${Math.round(pct)}%)` : `🟢 终点监听中`;
       }
     );
   }
@@ -1412,7 +1504,7 @@ function showRaceEndActions(race, blob) {
   $('btn-see-results').onclick   = () => { renderResults(race, blob); showTab('results'); };
 
   // Play victory sound for winner
-  setTimeout(() => { beep(1047, 150); setTimeout(() => beep(1319, 150), 180); setTimeout(() => beep(1568, 300), 360); }, 200);
+  starterAudio.playVictory();
 }
 
 // Reset race state to start next group (keepConn = true = stay connected)
