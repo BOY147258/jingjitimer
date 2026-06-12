@@ -1239,6 +1239,262 @@ input[type="text"]:focus { border-color: var(--accent); }
   color: #fff;
 }
 
+/* ── Performance mode toggle ─────────────────────── */
+.perf-mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+.perf-mode-btn {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.perf-mode-btn.active {
+  background: #6200ea;
+  border-color: #6200ea;
+  color: #fff;
+}
+.perf-mode-btn:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.perf-stats-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(98,0,234,.1);
+  border-radius: var(--radius-sm);
+}
+.perf-stats-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.perf-stats-label b {
+  color: #6200ea;
+}
+
+/* ── Server URL presets ───────────────────────────── */
+.server-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.server-preset-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.server-preset-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.server-preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.server-preset-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.server-url-hint {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #666;
+}
+.server-current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Practice mode ─────────────────────────────── */
+.practice-mode-card {
+  margin-top: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(98,0,234,0.1) 0%, rgba(255,98,0,0.05) 100%);
+  border: 1px dashed rgba(255,98,0,0.4);
+  border-radius: var(--radius-md);
+}
+.practice-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.practice-icon { font-size: 24px; }
+.practice-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.practice-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.practice-mode-active {
+  background: linear-gradient(135deg, rgba(98,0,234,0.15) 0%, rgba(255,98,0,0.1) 100%);
+  border-color: #ff6200;
+}
+.practice-mode-active .practice-title { color: #ff6200; }
+.practice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #ff6200;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 20px;
+  margin-left: 8px;
+}
+
+/* ── Trend chart ───────────────────────────────── */
+.trend-chart-wrap {
+  position: relative;
+  background: rgba(0,0,0,0.2);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.trend-chart-wrap canvas {
+  width: 100%;
+  height: 160px;
+}
+.trend-stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 12px;
+}
+.trend-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.trend-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.trend-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.trend-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Device Diagnostic Modal ──────────────────── */
+.diag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.diag-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius-sm);
+}
+.diag-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.diag-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.diag-status {
+  text-align: center;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.diag-preview {
+  margin-top: 12px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.diag-preview video {
+  width: 100%;
+  max-height: 180px;
+}
+.diag-visual {
+  margin-top: 12px;
+}
+.diag-level-track {
+  height: 40px;
+  background: rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.diag-level-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #00e676, #ffd600, #ff1744);
+  transition: width 0.1s;
+}
+.diag-benchmark {
+  margin-top: 12px;
+}
+.diag-progress {
+  height: 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.diag-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ff6200, #ff9f00);
+  transition: width 0.3s;
+}
+.diag-result {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.diag-result-item {
+  padding: 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.diag-result-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.diag-result-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
 /* ── Finish split card ─────────────────────────────── */
 .fs-split-card {
   opacity: .85;

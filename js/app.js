@@ -14,6 +14,8 @@ const state = {
   lapCount:     1,        // laps per race (1 = sprint, 4 = 1600m, etc.)
   distance:     100,      // race distance in metres
   trackLength:  400,      // track length in metres
+  perfMode:     'balanced', // 'high' | 'balanced' | 'low' - 性能模式
+  practiceMode: false,    // 练习模式标记
   currentRound: 1,
   currentGroup: 1,
   meetId:       null,
@@ -188,6 +190,8 @@ const DOM = {
   roomCodeInput:   $('room-code-input'),
   roomStatus:      $('room-status'),
   btnConnect:      $('btn-connect'),
+  serverUrlInput:  $('server-url-input'),
+  serverCurrent:   $('server-current'),
   btnRoleConfirm:  $('btn-role-confirm'),
   // Setup
   raceName:       $('race-name'),
@@ -240,6 +244,13 @@ const DOM = {
   btnExportCsv:   $('btn-export-csv'),
   btnClearRes:    $('btn-clear-results'),
   historyList:    $('history-list'),
+  trendCanvas:    $('trend-canvas'),
+  trendStats:     $('trend-stats'),
+  trendBest:      $('trend-best'),
+  trendAvg:       $('trend-avg'),
+  trendCount:     $('trend-count'),
+  trendEmpty:     $('trend-empty'),
+  btnToggleTrend: $('btn-toggle-trend'),
   // Finish device – fullscreen
   finishVideoFs:    $('finish-video-fs'),
   finishCanvasFs:   $('finish-canvas-fs'),
@@ -254,6 +265,9 @@ const DOM = {
   fsSettingsPanel:  $('fs-settings-panel'),
   fsSensSlider:     $('fs-sensitivity'),
   fsSensVal:        $('fs-sens-val'),
+  fsPerfStats:      $('fs-perf-stats'),
+  fsFpsVal:         $('fs-fps-val'),
+  fsModeVal:        $('fs-mode-val'),
   fsLevelFill:      $('fs-level-fill'),
   fsDetectStatus:   $('fs-detect-status'),
   btnFsFlip:        $('btn-fs-flip'),
@@ -265,8 +279,30 @@ const DOM = {
 function isWeChat() { return /MicroMessenger/i.test(navigator.userAgent); }
 function isHTTPS()  { return location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'; }
 
+// ── 全局错误处理 ─────────────────────────────────────────
+window.addEventListener('error', (e) => {
+  const msg = e.message || '未知错误';
+  console.error('[App Error]', msg, e);
+  // 忽略一些常见的无害错误
+  if (msg.includes('ResizeObserver') || msg.includes('Non-Error')) return;
+  showToast(`系统错误: ${msg}`, 'error');
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[Unhandled Promise]', e.reason);
+});
+
 // ── Init ───────────────────────────────────────────────
 async function init() {
+  // 尝试恢复之前的会话状态
+  try {
+    const savedState = sessionStorage.getItem('jingji-session');
+    if (savedState) {
+      const parsed = JSON.parse(savedState);
+      if (parsed.roomCode) state.roomCode = parsed.roomCode;
+    }
+  } catch {}
+
   loadSettings();
   buildLaneInputs();
   attachEventListeners();
@@ -330,6 +366,8 @@ function saveSettings() {
       distance:    state.distance,
       trackLength: state.trackLength,
       laneCount:   state.laneCount,
+      perfMode:    state.perfMode,
+      serverHost:  DOM.serverUrlInput?.value.trim() || '',
     }));
   } catch {}
 }
@@ -340,7 +378,26 @@ function loadSettings() {
     if (s.distance)    state.distance    = Number(s.distance);
     if (s.trackLength) state.trackLength = Number(s.trackLength);
     if (s.laneCount)   state.laneCount   = Math.min(12, Math.max(1, Number(s.laneCount)));
+    if (s.perfMode)    state.perfMode    = s.perfMode; // 性能模式
+    if (s.serverHost)  state.serverHost  = s.serverHost; // 服务器地址
     state.lapCount = Math.max(1, Math.ceil(state.distance / state.trackLength));
+  } catch {}
+}
+
+// 加载服务器设置
+function loadServerSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('race-settings') || '{}');
+    if (DOM.serverUrlInput) {
+      DOM.serverUrlInput.value = s.serverHost || '';
+    }
+    if (DOM.serverCurrent) {
+      DOM.serverCurrent.textContent = location.host;
+    }
+    // 高亮当前选中的预设按钮
+    document.querySelectorAll('.server-preset-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.server === (s.serverHost || ''));
+    });
   } catch {}
 }
 
@@ -361,6 +418,13 @@ function applySettingsToDOM() {
   }
   $('btn-track-200')?.classList.toggle('active', state.trackLength === 200);
   $('btn-track-400')?.classList.toggle('active', state.trackLength === 400);
+
+  // Apply performance mode to UI
+  if (state.perfMode) {
+    document.querySelectorAll('.perf-mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === state.perfMode);
+    });
+  }
 }
 
 // ── Role selection ─────────────────────────────────────
@@ -1277,6 +1341,30 @@ async function enterRace() {
   }
 }
 
+// 进入练习模式
+async function enterPracticeMode() {
+  state.practiceMode = true;
+  state.currentGroup = 0; // 练习不计入正式组别
+
+  // 更新UI
+  const card = $('practice-mode-card');
+  if (card) {
+    card.classList.add('practice-mode-active');
+    card.querySelector('.practice-title').innerHTML = '🏃 练习模式 <span class="practice-badge">进行中</span>';
+  }
+
+  // 显示提示
+  showToast('已进入练习模式，成绩不计入正式记录', 'info');
+
+  // 进入比赛界面
+  await enterRace();
+
+  // 更新计时器显示为练习模式
+  if (DOM.timerSub) {
+    DOM.timerSub.textContent = '🔔 练习模式 - 请测试发令';
+  }
+}
+
 function _initRaceCanvas() {
   if (!DOM.raceCanvas || !DOM.raceVideo) return;
   const wrap = DOM.raceVideo.parentElement;
@@ -1620,6 +1708,11 @@ function resetRace() {
   resetTimerUI();
   DOM.recBadge.classList.add('hidden');
   renderLaneCards();
+
+  // 练习模式下显示提示
+  if (state.practiceMode && DOM.timerSub) {
+    DOM.timerSub.textContent = '🔔 练习模式 - 请测试发令';
+  }
 }
 
 function resetTimerUI() {
@@ -2135,6 +2228,134 @@ function renderHistory(history) {
   }).join('');
 }
 
+// 清除历史成绩
+function clearResults() {
+  if (!confirm('确定清除所有历史成绩？此操作不可撤销。')) return;
+  localStorage.removeItem('race-history');
+  localStorage.removeItem('jingjitimer-history');
+  loadHistory();
+  renderTrendChart();
+  showToast('历史成绩已清除', 'success');
+}
+
+// 绘制成绩趋势图表
+function renderTrendChart() {
+  if (!DOM.trendCanvas) return;
+
+  const history = getHistory();
+  const allResults = [];
+
+  // 收集所有有效成绩
+  history.forEach(race => {
+    race.lanes?.forEach(lane => {
+      if (lane.time != null) {
+        allResults.push({
+          date: race.date,
+          time: lane.time,
+          name: lane.name
+        });
+      }
+    });
+  });
+
+  // 更新统计
+  if (DOM.trendBest) DOM.trendBest.textContent = '--';
+  if (DOM.trendAvg) DOM.trendAvg.textContent = '--';
+  if (DOM.trendCount) DOM.trendCount.textContent = allResults.length;
+
+  if (allResults.length < 2) {
+    DOM.trendEmpty?.classList.remove('hidden');
+    DOM.trendStats?.classList.add('hidden');
+    // 清空画布
+    const ctx = DOM.trendCanvas.getContext('2d');
+    ctx.clearRect(0, 0, DOM.trendCanvas.width, DOM.trendCanvas.height);
+    return;
+  }
+
+  DOM.trendEmpty?.classList.add('hidden');
+  DOM.trendStats?.classList.remove('hidden');
+
+  // 计算统计数据
+  const times = allResults.map(r => r.time);
+  const best = Math.min(...times);
+  const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+
+  if (DOM.trendBest) DOM.trendBest.textContent = PrecisionTimer.formatFull(best);
+  if (DOM.trendAvg) DOM.trendAvg.textContent = PrecisionTimer.formatFull(avg);
+
+  // 绘制图表
+  const canvas = DOM.trendCanvas;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+  const chartW = w - padding.left - padding.right;
+  const chartH = h - padding.top - padding.bottom;
+
+  // 清空画布
+  ctx.clearRect(0, 0, w, h);
+
+  // 取最近10条数据
+  const recent = allResults.slice(-10);
+  const minTime = Math.min(...recent.map(r => r.time)) * 0.95;
+  const maxTime = Math.max(...recent.map(r => r.time)) * 1.05;
+  const timeRange = maxTime - minTime;
+
+  // 绘制背景网格
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padding.top + (chartH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(w - padding.right, y);
+    ctx.stroke();
+  }
+
+  // 绘制数据线
+  ctx.strokeStyle = '#ff6200';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  recent.forEach((r, i) => {
+    const x = padding.left + (chartW / (recent.length - 1 || 1)) * i;
+    const y = padding.top + chartH - ((r.time - minTime) / timeRange) * chartH;
+
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  ctx.stroke();
+
+  // 绘制数据点和标签
+  recent.forEach((r, i) => {
+    const x = padding.left + (chartW / (recent.length - 1 || 1)) * i;
+    const y = padding.top + chartH - ((r.time - minTime) / timeRange) * chartH;
+
+    // 数据点
+    ctx.fillStyle = i === recent.length - 1 ? '#ff6200' : 'rgba(255,98,0,0.6)';
+    ctx.beginPath();
+    ctx.arc(x, y, i === recent.length - 1 ? 6 : 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 数值标签（最后一个点）
+    if (i === recent.length - 1) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText(PrecisionTimer.formatFull(r.time), x + 8, y + 4);
+    }
+  });
+
+  // 绘制Y轴标签
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(PrecisionTimer.formatFull(maxTime), padding.left - 5, padding.top + 12);
+  ctx.fillText(PrecisionTimer.formatFull(minTime), padding.left - 5, padding.top + chartH);
+}
+
 function renderResults(race, blob) {
   DOM.resultsCurrent.classList.remove('hidden');
   DOM.resultsTitle.textContent = race.name;
@@ -2301,6 +2522,28 @@ function attachEventListeners() {
     DOM.roomCodeSet.value = generateRoomCode();
   });
 
+  // Server preset buttons
+  document.querySelectorAll('.server-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const server = btn.dataset.server;
+      document.querySelectorAll('.server-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (DOM.serverUrlInput) DOM.serverUrlInput.value = server;
+      if (server === '' && DOM.serverCurrent) {
+        DOM.serverCurrent.textContent = location.host;
+      }
+      saveSettings();
+    });
+  });
+
+  // Server URL input auto-save
+  DOM.serverUrlInput?.addEventListener('change', () => {
+    saveSettings();
+  });
+
+  // Load saved server URL on init
+  loadServerSettings();
+
   // Permission overlay (fallback if auto-request needs retry)
   $('btn-grant-all')?.addEventListener('click', () => requestPermissions());
   $('btn-grant-mic')?.addEventListener('click', () => { DOM.permOverlay.classList.add('hidden'); });
@@ -2334,6 +2577,30 @@ function attachEventListeners() {
     detector.threshold = 100 - v;
     if (DOM.fsSensVal) DOM.fsSensVal.textContent = v;
   });
+
+  // Performance mode toggle
+  document.querySelectorAll('.perf-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      document.querySelectorAll('.perf-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      detector.setPerformanceMode(mode);
+      if (DOM.fsModeVal) DOM.fsModeVal.textContent = mode === 'high' ? '高' : mode === 'balanced' ? '中' : '低';
+      saveSettings();
+    });
+  });
+
+  // Update perf stats display periodically
+  const perfStatsInterval = setInterval(() => {
+    if (DOM.fsPerfStats && detector) {
+      const stats = detector.getPerformanceStats?.();
+      if (stats) {
+        DOM.fsPerfStats.classList.remove('hidden');
+        if (DOM.fsFpsVal) DOM.fsFpsVal.textContent = stats.fps?.toFixed(1) || '--';
+        if (DOM.fsModeVal) DOM.fsModeVal.textContent = stats.mode === 'high' ? '高' : stats.mode === 'balanced' ? '中' : '低';
+      }
+    }
+  }, 1000);
 
   // Finish flip camera
   DOM.btnFsFlip?.addEventListener('click', () => flipCamera());
@@ -2467,6 +2734,9 @@ function attachEventListeners() {
   // Enter race
   $('btn-enter-race').addEventListener('click', () => enterRace());
 
+  // Practice mode
+  $('btn-practice-mode')?.addEventListener('click', () => enterPracticeMode());
+
   // Race controls
   DOM.btnStart.addEventListener('click',  () => { audio.resume(); beginRace(); });
   DOM.btnStop.addEventListener('click',   () => endRace());
@@ -2516,6 +2786,11 @@ function attachEventListeners() {
   // Results actions
   DOM.btnDlVideo?.addEventListener('click',    () => recorder.download(DOM.raceName.value));
   DOM.btnExportCsv?.addEventListener('click',  () => exportResults());
+  DOM.btnClearRes?.addEventListener('click',  () => clearResults());
+  DOM.btnToggleTrend?.addEventListener('click', () => renderTrendChart());
+
+  // Initial trend chart render
+  renderTrendChart();
   DOM.btnObsExport?.addEventListener('click',  () => obsExportGroup());
   DOM.btnClearRes?.addEventListener('click',   () => {
     if (!confirm('清除所有历史成绩？')) return;
@@ -2537,10 +2812,166 @@ function attachEventListeners() {
   $('btn-fs-home')?.addEventListener('click', goHome);
   $('btn-obs-home')?.addEventListener('click', goHome);
 
+  // ── Device Diagnostic ───────────────────────────────
+  const openDiagnostic = () => {
+    const diag = $('diagnostic-overlay');
+    if (!diag) return;
+    diag.classList.remove('hidden');
+    runDeviceDiagnostics();
+  };
+
+  function runDeviceDiagnostics() {
+    // 浏览器信息
+    const ua = navigator.userAgent;
+    let browser = 'Unknown';
+    if (ua.includes('Chrome')) browser = 'Chrome';
+    else if (ua.includes('Firefox')) browser = 'Firefox';
+    else if (ua.includes('Safari')) browser = 'Safari';
+    else if (ua.includes('Edge')) browser = 'Edge';
+
+    let os = 'Unknown';
+    if (ua.includes('Windows')) os = 'Windows';
+    else if (ua.includes('Mac')) os = 'macOS';
+    else if (ua.includes('Android')) os = 'Android';
+    else if (ua.includes('iOS')) os = 'iOS';
+
+    $('diag-browser')?.setAttribute('data-value', browser);
+    if ($('diag-browser')) $('diag-browser').textContent = browser;
+    if ($('diag-os')) $('diag-os').textContent = os;
+    if ($('diag-screen')) $('diag-screen').textContent = `${screen.width}×${screen.height}`;
+    if ($('diag-dpr')) $('diag-dpr').textContent = window.devicePixelRatio;
+
+    // 网络信息
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      if ($('diag-network')) $('diag-network').textContent = conn.type || '--';
+      if ($('diag-efftype')) $('diag-efftype').textContent = conn.effectiveType || '--';
+    }
+  }
+
+  let testCamStream = null;
+  async function testCamera() {
+    const statusEl = $('diag-cam-status');
+    const previewEl = $('diag-cam-preview');
+    const videoEl = $('diag-cam-video');
+
+    try {
+      if (statusEl) statusEl.textContent = '正在请求摄像头权限...';
+      testCamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoEl) {
+        videoEl.srcObject = testCamStream;
+        previewEl?.classList.remove('hidden');
+      }
+      if (statusEl) {
+        statusEl.textContent = '✅ 摄像头正常';
+        statusEl.style.color = '#00e676';
+      }
+    } catch (e) {
+      if (statusEl) {
+        statusEl.textContent = '❌ 摄像头无法访问: ' + (e.message || '请检查权限设置');
+        statusEl.style.color = '#ff1744';
+      }
+    }
+  }
+
+  let testMicStream = null;
+  let micAnalyser = null;
+  async function testMicrophone() {
+    const statusEl = $('diag-mic-status');
+    const visualEl = $('diag-mic-visual');
+    const levelEl = $('diag-mic-level');
+
+    try {
+      if (statusEl) statusEl.textContent = '正在请求麦克风权限...';
+      testMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (visualEl) visualEl.classList.remove('hidden');
+
+      // 设置音量可视化
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(testMicStream);
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 256;
+      source.connect(micAnalyser);
+
+      const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+      const updateLevel = () => {
+        if (!micAnalyser || !levelEl) return;
+        micAnalyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+        levelEl.style.width = Math.min(100, avg * 1.5) + '%';
+        requestAnimationFrame(updateLevel);
+      };
+      updateLevel();
+
+      if (statusEl) {
+        statusEl.textContent = '✅ 麦克风正常';
+        statusEl.style.color = '#00e676';
+      }
+    } catch (e) {
+      if (statusEl) {
+        statusEl.textContent = '❌ 麦克风无法访问: ' + (e.message || '请检查权限设置');
+        statusEl.style.color = '#ff1744';
+      }
+    }
+  }
+
+  async function runBenchmark() {
+    const resultEl = $('diag-result');
+    const progressEl = $('diag-progress-bar');
+    const benchmarkEl = $('diag-benchmark');
+
+    if (benchmarkEl) benchmarkEl.classList.remove('hidden');
+
+    // 运行JS基准测试
+    let score = 0;
+    const iterations = 100000;
+
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now();
+      for (let j = 0; j < iterations; j++) {
+        Math.sqrt(j) * Math.sin(j) + Math.cos(j);
+      }
+      score += (performance.now() - start);
+      if (progressEl) {
+        progressEl.style.width = ((i + 1) / 3 * 100) + '%';
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    const avgTime = score / 3;
+
+    // 计算性能评级
+    let rating = 'unknown';
+    if (avgTime < 5) rating = 'excellent';
+    else if (avgTime < 10) rating = 'good';
+    else if (avgTime < 20) rating = 'average';
+    else rating = 'slow';
+
+    const ratingText = { excellent: '🟢 优秀', good: '🟡 良好', average: '🟠 一般', slow: '🔴 较慢' };
+
+    if (resultEl) {
+      resultEl.innerHTML = `
+        <div class="diag-result-item">
+          <div class="diag-result-label">执行时间</div>
+          <div class="diag-result-value">${avgTime.toFixed(2)}ms</div>
+        </div>
+        <div class="diag-result-item">
+          <div class="diag-result-label">性能评级</div>
+          <div class="diag-result-value">${ratingText[rating] || rating}</div>
+        </div>
+      `;
+    }
+  }
+
   // Help / guide buttons
   const openGuide = () => $('guide-overlay')?.classList.remove('hidden');
   const closeGuide = () => $('guide-overlay')?.classList.add('hidden');
   $('btn-help')?.addEventListener('click', openGuide);
+  $('btn-diagnostic')?.addEventListener('click', openDiagnostic);
+  $('btn-diagnostic-close')?.addEventListener('click', () => $('diagnostic-overlay')?.classList.add('hidden'));
+  $('btn-diagnostic-ok')?.addEventListener('click', () => $('diagnostic-overlay')?.classList.add('hidden'));
+  $('btn-test-cam')?.addEventListener('click', testCamera);
+  $('btn-test-mic')?.addEventListener('click', testMicrophone);
+  $('btn-benchmark')?.addEventListener('click', runBenchmark);
   $('btn-fs-guide')?.addEventListener('click', () => {
     DOM.fsSettingsPanel?.classList.add('hidden');
     openGuide();

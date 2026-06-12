@@ -89,13 +89,22 @@
         </div>
 
         <!-- 服务器地址（高级，默认填好，不懂的不用改） -->
-        <details class="server-url-details">
+        <details class="server-url-details" id="server-details">
           <summary class="server-url-summary">服务器地址 ▸</summary>
+          <div class="server-presets">
+            <label class="server-preset-label">快速选择：</label>
+            <button class="server-preset-btn" data-server="">自动检测</button>
+            <button class="server-preset-btn" data-server="jingjitimer.onrender.com">Railway</button>
+            <button class="server-preset-btn" data-server="jingjitimer-render.onrender.com">Render</button>
+          </div>
           <input type="text" id="server-url-input" class="room-code-input"
             style="width:100%;margin-top:6px;font-size:12px"
             placeholder="例：jingjitimer.onrender.com"
-            value="zestful-nurturing-production-50d7.up.railway.app">
-          <div style="font-size:11px;color:#666;margin-top:4px">留空则使用当前网站地址</div>
+            value="">
+          <div class="server-url-hint">
+            <span>留空使用当前地址</span>
+            <span class="server-current" id="server-current"></span>
+          </div>
         </details>
 
         <div id="room-status" class="room-status">未连接</div>
@@ -129,6 +138,7 @@
   <header class="app-header">
     <span class="app-title" id="app-title"><span class="brand-jj">竞迹</span></span>
     <button id="btn-help" class="btn-help-header" aria-label="使用说明">?</button>
+    <button id="btn-diagnostic" class="btn-help-header" aria-label="设备诊断" style="margin-right:8px">🔧</button>
     <div class="header-status">
       <div id="finish-count-badge" class="finish-count-badge hidden"></div>
       <div id="sync-badge" class="sync-badge hidden">📡 <span id="sync-room">—</span></div>
@@ -305,6 +315,18 @@
     </details>
 
     <button id="btn-enter-race" class="btn btn-primary btn-full btn-large">开始比赛 →</button>
+
+    <!-- 练习模式 -->
+    <div class="practice-mode-card" id="practice-mode-card">
+      <div class="practice-header">
+        <span class="practice-icon">🏃</span>
+        <span class="practice-title">赛前练习</span>
+      </div>
+      <div class="practice-desc">在正式比赛前进行测试，熟悉发令和计时流程</div>
+      <button id="btn-practice-mode" class="btn btn-secondary btn-full mt-8">
+        🔔 进入练习模式
+      </button>
+    </div>
   </section>
 
   <!-- ── Race Tab ──────────────────────────────────────── -->
@@ -376,6 +398,32 @@
       <div id="history-list"><p class="hint-text">暂无历史成绩</p></div>
     </div>
 
+    <!-- 成绩趋势图表 -->
+    <div class="card" id="trend-card">
+      <div class="card-title-row">
+        <div class="card-title">📈 成绩趋势</div>
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-trend">切换视图</button>
+      </div>
+      <div class="trend-chart-wrap">
+        <canvas id="trend-canvas" width="360" height="160"></canvas>
+      </div>
+      <div class="trend-stats hidden" id="trend-stats">
+        <div class="trend-stat">
+          <span class="trend-stat-label">最佳</span>
+          <span class="trend-stat-value" id="trend-best">--</span>
+        </div>
+        <div class="trend-stat">
+          <span class="trend-stat-label">平均</span>
+          <span class="trend-stat-value" id="trend-avg">--</span>
+        </div>
+        <div class="trend-stat">
+          <span class="trend-stat-label">参赛</span>
+          <span class="trend-stat-value" id="trend-count">0</span>
+        </div>
+      </div>
+      <div class="trend-empty" id="trend-empty">暂无足够数据展示趋势</div>
+    </div>
+
     <a href="admin.html" class="admin-link">📊 打开成绩管理后台（可用浏览器返回键回来）</a>
   </section>
 
@@ -434,6 +482,18 @@
       <div class="form-row">
         <label>灵敏度 <b id="fs-sens-val">50</b></label>
         <input type="range" id="fs-sensitivity" min="5" max="80" value="20" class="slider">
+      </div>
+      <div class="form-row">
+        <label>性能模式</label>
+        <div class="perf-mode-toggle">
+          <button class="perf-mode-btn" data-mode="high" title="最高精度，旗舰手机">🚀 高</button>
+          <button class="perf-mode-btn active" data-mode="balanced" title="平衡模式，中端手机">⚖️ 中</button>
+          <button class="perf-mode-btn" data-mode="low" title="省电模式，低端设备">🔋 低</button>
+        </div>
+      </div>
+      <div class="perf-stats-row hidden" id="fs-perf-stats">
+        <span class="perf-stats-label">FPS: <b id="fs-fps-val">--</b></span>
+        <span class="perf-stats-label">模式: <b id="fs-mode-val">--</b></span>
       </div>
       <div class="audio-monitor-box" style="margin-top:10px">
         <div class="monitor-label">终点线动作检测</div>
@@ -556,6 +616,87 @@
       </div>
 
       <button class="btn btn-primary mt-16" id="btn-guide-ok" style="width:100%">明白了</button>
+    </div>
+  </div>
+
+  <!-- ── Device Diagnostic Modal ─────────────────────── -->
+  <div id="diagnostic-overlay" class="guide-overlay hidden">
+    <div class="guide-card" style="max-width:480px">
+      <button class="guide-close" id="btn-diagnostic-close">✕</button>
+      <div class="guide-title">🔧 设备诊断</div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">📱 设备信息</div>
+        <div class="diag-grid">
+          <div class="diag-item">
+            <span class="diag-label">浏览器</span>
+            <span class="diag-value" id="diag-browser">--</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-label">操作系统</span>
+            <span class="diag-value" id="diag-os">--</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-label">屏幕</span>
+            <span class="diag-value" id="diag-screen">--</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-label">像素比</span>
+            <span class="diag-value" id="diag-dpr">--</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">🎥 摄像头检测</div>
+        <div class="diag-status" id="diag-cam-status">点击下方按钮开始检测</div>
+        <button id="btn-test-cam" class="btn btn-secondary btn-full mt-8">🔍 测试摄像头</button>
+        <div id="diag-cam-preview" class="diag-preview hidden">
+          <video id="diag-cam-video" autoplay muted playsinline></video>
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">🎤 麦克风检测</div>
+        <div class="diag-status" id="diag-mic-status">点击下方按钮开始检测</div>
+        <button id="btn-test-mic" class="btn btn-secondary btn-full mt-8">🎤 测试麦克风</button>
+        <div id="diag-mic-visual" class="diag-visual hidden">
+          <div class="diag-level-track">
+            <div id="diag-mic-level" class="diag-level-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">🌐 网络状态</div>
+        <div class="diag-grid">
+          <div class="diag-item">
+            <span class="diag-label">连接类型</span>
+            <span class="diag-value" id="diag-network">--</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-label">有效类型</span>
+            <span class="diag-value" id="diag-efftype">--</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-label">RTT</span>
+            <span class="diag-value" id="diag-rtt">--</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <div class="guide-sec-title">⚡ 性能测试</div>
+        <button id="btn-benchmark" class="btn btn-secondary btn-full">🚀 运行性能测试</button>
+        <div class="diag-benchmark hidden" id="diag-benchmark">
+          <div class="diag-progress">
+            <div class="diag-progress-bar" id="diag-progress-bar"></div>
+          </div>
+          <div class="diag-result" id="diag-result"></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary mt-16" id="btn-diagnostic-ok" style="width:100%">关闭</button>
     </div>
   </div>
 
