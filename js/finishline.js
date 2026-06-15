@@ -17,7 +17,7 @@ export class FinishLineDetector {
     this._cooldowns         = [];
     this._lastMotion        = 0;
     this._lastBlobs         = [];
-    this._lastCrossingTs    = -Infinity;
+    this._lastCrossingTs    = {};     // per-lane timestamps: { [laneIdx]: ms, '__global': ms }
     this._lastCrossingLane  = -1;
     this.onCrossing         = null;  // cb(laneIdx, precisionTimestamp)
     this.onLevel            = null;
@@ -277,6 +277,7 @@ export class FinishLineDetector {
     // 处理每个检测到的blob
     blobs.forEach(blob => {
       const laneIdx = this._laneFromY(blob.center);
+      if (this._laneDone.has(laneIdx)) return;  // 永久锁定：完赛车道不再触发
       if (this._cooldowns[laneIdx]) return;
 
       // 误触发防护：检查运动强度
@@ -381,20 +382,23 @@ export class FinishLineDetector {
     // 按时间戳排序
     this._crossingQueue.sort((a, b) => a.timestamp - b.timestamp);
 
-    // 获取当前最早的有效事件
-    const now = performance.now();
     const event = this._crossingQueue.shift();
 
-    // 检查是否与上次冲线时间冲突（同道次）
-    const sameLaneLastTs = this._lastCrossingTs[laneIdx] || -Infinity;
-    if (now - sameLaneLastTs < this._minGapBetweenLane) {
-      // 忽略这次冲线（太接近，可能是重复检测）
+    // ── 永久锁定检查：运动员已完赛，不再触发任何回调 ─────
+    if (this._laneDone.has(event.laneIdx)) {
+      this._crossingProcessTimer = setTimeout(() => this._processCrossingQueue(), 10);
+      return;
+    }
+
+    // 同道次最小间隔检查
+    const sameLaneLastTs = this._lastCrossingTs[event.laneIdx] || -Infinity;
+    if (performance.now() - sameLaneLastTs < this._minGapBetweenLane) {
       this._processCrossingQueue();
       return;
     }
 
     // 更新最后冲线时间
-    this._lastCrossingTs[laneIdx] = event.timestamp;
+    this._lastCrossingTs[event.laneIdx] = event.timestamp;
 
     const diffMs = event.timestamp - (this._lastCrossingTs['__global'] || event.timestamp);
 
