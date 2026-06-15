@@ -283,7 +283,12 @@ export class FinishLineDetector {
 
     // 处理每个检测到的blob
     blobs.forEach(blob => {
-      const laneIdx = this._laneFromY(blob.center);
+      // ── 核心：只检测 blob 前沿越过中线才算真正冲线 ──
+      // 前沿是指运动员最先到达终点线的部分
+      if (blob.leadingEdge < this._W / 2) return;
+
+      // 用精确算法分配道次（峰值优先）
+      const laneIdx = this._assignLane(blob, H);
       if (this._laneDone.has(laneIdx)) return;  // 永久锁定：完赛车道不再触发
       if (this._cooldowns[laneIdx]) return;
 
@@ -474,30 +479,55 @@ export class FinishLineDetector {
   }
 
   _detectBlobs(motionPerRow, H) {
-    const THRESH  = this._threshold * 0.7;
-    const MIN_PX  = Math.floor(H * 0.08);
+    const THRESH = this._threshold * 0.7;
+    const MIN_PX = Math.floor(H * 0.08);
 
     const blobs = [];
     let start = -1;
     let maxM  = 0;
+    let maxAt = -1;
 
     for (let y = 0; y <= H; y++) {
       const m = y < H ? motionPerRow[y] : 0;
-      if (m > THRESH && start < 0) { start = y; maxM = m; }
-      else if (m > THRESH)         { if (m > maxM) maxM = m; }
+      if (m > THRESH && start < 0) { start = y; maxM = m; maxAt = y; }
+      else if (m > THRESH) {
+        if (m > maxM) { maxM = m; maxAt = y; }
+      }
       else if (start >= 0) {
         if (y - start >= MIN_PX) {
           blobs.push({
-            top:    start,
-            bottom: y,
-            center: (start + y) / 2,
-            peak:   maxM,
+            top:         start,
+            bottom:      y,
+            leadingEdge: start,           // 前沿：blob 最先出现的行（相对于 strip 左缘）
+            center:      (start + y) / 2, // 几何中心
+            peak:        maxM,
+            peakAt:      maxAt,           // 峰值所在行（用于精确道次分配）
           });
         }
-        start = -1; maxM = 0;
+        start = -1; maxM = 0; maxAt = -1;
       }
     }
     return blobs;
+  }
+
+  // 根据 blob 特征精确分配道次
+  // 优先级：峰值行所在道次 > 加权中心所在道次 > 几何中心所在道次
+  _assignLane(blob, H) {
+    // 峰值所在行
+    const peakLane = this._laneFromY(blob.peakAt);
+    // 加权运动中心
+    const totalMotion = blob.peak;
+    const weightedCenter = blob.center;
+    const wcLane = this._laneFromY(weightedCenter);
+    // 几何中心
+    const geoLane = this._laneFromY(blob.center);
+
+    // 如果峰值行和几何中心在同一道，使用峰值行
+    if (peakLane === geoLane) return peakLane;
+    // 如果加权中心在某一道，且峰值也在该道，使用加权中心
+    if (Math.abs(weightedCenter - blob.peakAt) < H / this._laneCount / 2) return wcLane;
+    // 默认使用峰值行
+    return peakLane;
   }
 
   _drawOverlay() {
