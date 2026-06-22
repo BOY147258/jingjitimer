@@ -20,6 +20,8 @@
       margin-bottom: 30px;
       font-size: 24px;
     }
+    h1 span { display: block; font-size: 14px; color: #888; margin-top: 8px; }
+
     .test-card {
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.1);
@@ -41,7 +43,7 @@
     button {
       flex: 1;
       min-width: 100px;
-      padding: 14px 16px;
+      padding: 16px 16px;
       border: none;
       border-radius: 12px;
       font-size: 15px;
@@ -58,6 +60,13 @@
     button:active { transform: scale(0.95); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    .divider {
+      text-align: center;
+      color: #666;
+      font-size: 12px;
+      margin: 20px 0;
+    }
+
     .status {
       margin-top: 20px;
       padding: 16px;
@@ -73,15 +82,6 @@
     .status-success { color: #4CAF50; }
     .status-info { color: #2196F3; }
 
-    .system-info {
-      margin-top: 20px;
-      padding: 16px;
-      background: rgba(255,255,255,0.03);
-      border-radius: 12px;
-      font-size: 13px;
-    }
-    .system-info h3 { color: #ff6200; margin-bottom: 10px; font-size: 14px; }
-    .system-info p { margin: 4px 0; color: rgba(255,255,255,0.7); }
     .specs {
       background: rgba(255,98,0,0.1);
       border: 1px solid rgba(255,98,0,0.3);
@@ -96,72 +96,50 @@
 <body>
   <div class="container">
     <h1>
-      🔊 国际标准电子发令音效
-      <span style="display:block;font-size:14px;color:#888;margin-top:8px">各就位 + 预备 + 电子枪声</span>
+      🔊 电子发令音效
+      <span>各就位 + 预备 + 枪声</span>
     </h1>
 
     <div class="test-card">
       <div class="test-title">第一步：初始化音频系统</div>
-      <button class="btn-init" onclick="initVoice()" style="width:100%;padding:16px;font-size:16px">
-        🔊 初始化（必须先点）
+      <button class="btn-init" onclick="initVoice()" style="width:100%;padding:18px;font-size:16px">
+        🔊 初始化音频系统
       </button>
     </div>
 
     <div class="test-card">
-      <div class="test-title">第二步：测试各个音效</div>
+      <div class="test-title">第二步：分开按（自己控制节奏）</div>
       <div class="btn-row">
         <button class="btn-gejiuwei" onclick="testGeJiuWei()" id="btn1" disabled>📢 各就位</button>
         <button class="btn-yubei" onclick="testYuBei()" id="btn2" disabled>⚡ 预备</button>
       </div>
       <div class="btn-row" style="margin-top:10px">
-        <button class="btn-gunshot" onclick="testHorn()" id="btn3" disabled>🏁 标准发令哨音</button>
+        <button class="btn-gunshot" onclick="testHorn()" id="btn3" disabled>🔫 发令枪声</button>
       </div>
     </div>
 
-    <div class="test-card">
-      <div class="test-title">第三步：完整发令序列（含随机编排）</div>
-      <button class="btn-all" onclick="testFullSequence()" id="btn4" disabled>
-        ▶️ 完整发令（各就位→预备→电子枪声 + 随机等待）
-      </button>
-      <p style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5)">
-        完整序列：各就位 → 等待 → 预备 → 随机0.7-2.0秒 → 枪声
-      </p>
-    </div>
+    <div class="divider">━━━━━━━━━━ 或 ━━━━━━━━━━</div>
 
-    <div class="status" id="status">
-      <div class="status-info">请按顺序操作</div>
+    <div class="test-card">
+      <div class="test-title">第三步：一键完整发令（各就位→预备→枪声）</div>
+      <button class="btn-all" onclick="testFullSequence()" id="btn4" disabled style="padding:20px;font-size:18px">
+        ▶️ 完整发令
+      </button>
     </div>
 
     <div class="specs">
-      <h3>📋 国际标准参数</h3>
-      <p>• 哨音频率：2000Hz（正弦波纯音）</p>
-      <p>• 哨音时长：1.5秒（国际标准）</p>
-      <p>• 各就位到预备：等待运动员就位</p>
-      <p>• 预备到发令：0.7-2.0秒随机</p>
-      <p>• 音量：最大音量，渐入渐出</p>
+      <h3>📋 电子枪声参数</h3>
+      <p>• 频率：2000Hz 正弦波</p>
+      <p>• 时长：0.5秒（短促有力）</p>
+      <p>• 无尾音，干脆利落</p>
     </div>
 
-    <div class="system-info">
-      <h3>📱 系统信息</h3>
-      <p>语音合成: <span id="speech-support">检测中...</span></p>
-      <p>Web Audio API: <span id="audio-support">检测中...</span></p>
+    <div class="status" id="status">
+      <div class="status-info">点击上方按钮测试</div>
     </div>
   </div>
 
   <script>
-    // 检测系统支持
-    if ('speechSynthesis' in window) {
-      document.getElementById('speech-support').textContent = '✅ 支持';
-    } else {
-      document.getElementById('speech-support').textContent = '❌ 不支持';
-    }
-
-    if (window.AudioContext || window.webkitAudioContext) {
-      document.getElementById('audio-support').textContent = '✅ 支持';
-    } else {
-      document.getElementById('audio-support').textContent = '❌ 不支持';
-    }
-
     let audioCtx = null;
 
     function log(msg, type = 'info') {
@@ -211,130 +189,84 @@
 
     // 各就位
     async function testGeJiuWei() {
-      log('📢 播放: 各就位...', 'info');
+      log('📢 播放: 各就位', 'info');
       await speakChinese('各就位');
-      log('✅ 各就位 已播放', 'success');
+      log('✅ 各就位 完成', 'success');
     }
 
     // 预备
     async function testYuBei() {
-      log('⚡ 播放: 预备...', 'info');
+      log('⚡ 播放: 预备', 'info');
       await speakChinese('预备');
-      log('✅ 预备 已播放', 'success');
+      log('✅ 预备 完成', 'success');
     }
 
-    // 国际标准发令枪声
-    // 包含：起始爆破 + 主体哨音 + 混响尾音
-    // 2000Hz标准频率 + 有力的爆破起始
+    // 电子发令枪声 - 干脆利落，无尾音
     async function testHorn() {
-      log('🔫 播放: 电子发令枪声...', 'info');
+      log('🔫 播放: 发令枪声', 'info');
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
 
-      const FREQ = 2000;      // 2000Hz 标准频率
-      const TOTAL_DURATION = 1.5;
+      const FREQ = 2000;  // 2000Hz 标准频率
+      const DURATION = 0.4; // 0.4秒，干脆短促
 
-      // ========== 1. 起始爆破瞬态 (0-50ms) ==========
-      // 快速噪声爆破 - 模拟真实枪声的"啪"声
-      const blastLength = ctx.sampleRate * 0.05;
+      // 1. 起始爆破 (0-30ms)
+      const blastLength = ctx.sampleRate * 0.03;
       const blastBuffer = ctx.createBuffer(1, blastLength, ctx.sampleRate);
       const blastData = blastBuffer.getChannelData(0);
       for (let i = 0; i < blastLength; i++) {
-        // 指数衰减的噪声
-        blastData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.008));
+        blastData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.005));
       }
       const blast = ctx.createBufferSource();
       blast.buffer = blastBuffer;
-
-      // 高通滤波 - 让爆破声更尖锐
       const blastFilter = ctx.createBiquadFilter();
       blastFilter.type = 'highpass';
-      blastFilter.frequency.value = 800;
-
-      // 爆破增益 - 立即达到最大然后快速衰减
+      blastFilter.frequency.value = 1000;
       const blastGain = ctx.createGain();
-      blastGain.gain.setValueAtTime(0.8, now);
-      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-
+      blastGain.gain.setValueAtTime(0.9, now);
+      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
       blast.connect(blastFilter);
       blastFilter.connect(blastGain);
       blastGain.connect(ctx.destination);
 
-      // ========== 2. 主体哨音 (0-1400ms) ==========
-      // 2000Hz 正弦波 - 国际标准频率
+      // 2. 主体哨音 (0-350ms) - 2000Hz正弦波
       const mainOsc = ctx.createOscillator();
       const mainGain = ctx.createGain();
-
       mainOsc.type = 'sine';
       mainOsc.frequency.setValueAtTime(FREQ, now);
 
-      // 音量包络：渐入(20ms) → 保持 → 渐出(150ms)
+      // 渐入10ms，保持，然后突然停止（无尾音）
       mainGain.gain.setValueAtTime(0, now);
-      mainGain.gain.linearRampToValueAtTime(1.0, now + 0.02);
-      mainGain.gain.setValueAtTime(1.0, now + 1.25);
-      mainGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+      mainGain.gain.linearRampToValueAtTime(1.0, now + 0.01);
+      mainGain.gain.setValueAtTime(1.0, now + DURATION - 0.05);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, now + DURATION);
 
       mainOsc.connect(mainGain);
       mainGain.connect(ctx.destination);
 
-      // ========== 3. 泛音层 - 让声音更饱满有力 ==========
+      // 3. 泛音增强 (0-200ms)
       const harmOsc = ctx.createOscillator();
       const harmGain = ctx.createGain();
-
       harmOsc.type = 'sine';
-      harmOsc.frequency.setValueAtTime(FREQ * 2, now); // 4000Hz 泛音
-
+      harmOsc.frequency.setValueAtTime(FREQ * 2, now);
       harmGain.gain.setValueAtTime(0, now);
-      harmGain.gain.linearRampToValueAtTime(0.2, now + 0.02);
-      harmGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-
+      harmGain.gain.linearRampToValueAtTime(0.2, now + 0.01);
+      harmGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
       harmOsc.connect(harmGain);
       harmGain.connect(ctx.destination);
 
-      // ========== 4. 低频轰鸣 - 增加厚重感 ==========
-      const lowOsc = ctx.createOscillator();
-      const lowGain = ctx.createGain();
-
-      lowOsc.type = 'sine';
-      lowOsc.frequency.setValueAtTime(100, now);
-      lowOsc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
-
-      lowGain.gain.setValueAtTime(0.4, now);
-      lowGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-
-      lowOsc.connect(lowGain);
-      lowGain.connect(ctx.destination);
-
-      // ========== 5. 混响尾音 (1000-1500ms) ==========
-      const reverbOsc = ctx.createOscillator();
-      const reverbGain = ctx.createGain();
-
-      reverbOsc.type = 'sine';
-      reverbOsc.frequency.setValueAtTime(FREQ * 0.5, now + 0.8); // 低频混响
-
-      reverbGain.gain.setValueAtTime(0, now + 0.8);
-      reverbGain.gain.linearRampToValueAtTime(0.3, now + 0.9);
-      reverbGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-
-      reverbOsc.connect(reverbGain);
-      reverbGain.connect(ctx.destination);
-
-      // ========== 启动所有音源 ==========
+      // 启动
       blast.start(now);
       mainOsc.start(now);
       harmOsc.start(now);
-      lowOsc.start(now);
-      reverbOsc.start(now + 0.8);
 
-      // ========== 停止所有音源 ==========
-      blast.stop(now + 0.05);
-      mainOsc.stop(now + 1.4);
-      harmOsc.stop(now + 1.2);
-      lowOsc.stop(now + 0.4);
-      reverbOsc.stop(now + 1.5);
+      // 停止
+      blast.stop(now + 0.03);
+      mainOsc.stop(now + DURATION);
+      harmOsc.stop(now + 0.2);
 
-      await new Promise(r => setTimeout(r, TOTAL_DURATION * 1000 + 200));
-      log('🔫 电子发令枪声 已播放 (2000Hz+爆破, 1.5秒)', 'success');
+      await new Promise(r => setTimeout(r, DURATION * 1000 + 100));
+      log('🔫 枪声 完成', 'success');
     }
 
     // 完整发令序列
@@ -343,16 +275,11 @@
 
       // 各就位
       await testGeJiuWei();
-      await new Promise(r => setTimeout(r, 800));
-      log('⏳ 等待运动员就位...', 'info');
+      await new Promise(r => setTimeout(r, 600));
 
       // 预备
       await testYuBei();
-      await new Promise(r => setTimeout(r, 600));
-
-      // 0.4~0.9秒随机延迟（防止压枪）
-      const waitTime = 400 + Math.random() * 500;
-      await new Promise(r => setTimeout(r, waitTime));
+      await new Promise(r => setTimeout(r, 400));
 
       // 枪声
       await testHorn();
