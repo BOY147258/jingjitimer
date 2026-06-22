@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>发令音效测试 - 竞迹</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0a14 0%, #12121f 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+    }
+    .container { max-width: 500px; margin: 0 auto; }
+    h1 {
+      text-align: center;
+      color: #ff6200;
+      margin-bottom: 30px;
+      font-size: 24px;
+    }
+    .test-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .test-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      flex: 1;
+      min-width: 100px;
+      padding: 14px 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-gejiuwei { background: linear-gradient(135deg, #4CAF50, #45a049); color: #fff; }
+    .btn-yubei { background: linear-gradient(135deg, #FFC107, #ffb300); color: #000; }
+    .btn-gunshot { background: linear-gradient(135deg, #f44336, #e53935); color: #fff; }
+    .btn-recall { background: linear-gradient(135deg, #9C27B0, #8e24aa); color: #fff; }
+    .btn-all { background: linear-gradient(135deg, #ff6200, #ff8534); color: #fff; }
+
+    button:active { transform: scale(0.95); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .status-error { color: #f44336; }
+    .status-success { color: #4CAF50; }
+    .status-info { color: #2196F3; }
+
+    .system-info {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      font-size: 13px;
+    }
+    .system-info h3 {
+      color: #ff6200;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .system-info p { margin: 4px 0; color: rgba(255,255,255,0.7); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔊 发令音效测试</h1>
+
+    <div class="test-card">
+      <div class="test-title">单独测试每个音效</div>
+      <div class="btn-row">
+        <button class="btn-gejiuwei" onclick="testGeJiuWei()">📢 各就位</button>
+        <button class="btn-yubei" onclick="testYuBei()">⚡ 预备</button>
+        <button class="btn-gunshot" onclick="testGunshot()">🔫 枪声</button>
+        <button class="btn-recall" onclick="testRecall()">📢 召回</button>
+      </div>
+    </div>
+
+    <div class="test-card">
+      <div class="test-title">完整发令序列测试</div>
+      <div class="btn-row">
+        <button class="btn-all" onclick="testFullSequence()">▶️ 播放完整发令</button>
+      </div>
+    </div>
+
+    <div class="status" id="status">
+      <div class="status-info">点击上面的按钮测试音效...</div>
+    </div>
+
+    <div class="system-info">
+      <h3>📱 系统信息</h3>
+      <p id="ua">User Agent: 加载中...</p>
+      <p id="audio-support">Web Audio API: 检测中...</p>
+      <p id="audio-context">AudioContext 状态: 未知</p>
+    </div>
+  </div>
+
+  <script>
+    // 显示系统信息
+    document.getElementById('ua').textContent = 'User Agent: ' + navigator.userAgent;
+
+    // 检测 Web Audio API 支持
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      document.getElementById('audio-support').textContent = 'Web Audio API: ✅ 支持';
+    } else {
+      document.getElementById('audio-support').textContent = 'Web Audio API: ❌ 不支持';
+      log('❌ 您的浏览器不支持 Web Audio API，发令音效无法工作', 'error');
+    }
+
+    // 日志函数
+    function log(msg, type = 'info') {
+      const status = document.getElementById('status');
+      const div = document.createElement('div');
+      div.className = 'status-' + type;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      status.appendChild(div);
+      status.scrollTop = status.scrollHeight;
+      console.log(msg);
+    }
+
+    // 音频上下文
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        document.getElementById('audio-context').textContent = 'AudioContext 状态: ' + audioCtx.state;
+        log('AudioContext 已初始化，状态: ' + audioCtx.state, 'success');
+
+        // iOS Safari 需要用户交互后才能播放
+        if (audioCtx.state === 'suspended') {
+          log('⚠️ AudioContext 被暂停，需要用户交互激活', 'error');
+        }
+      }
+      return audioCtx;
+    }
+
+    // 各就位音效
+    async function testGeJiuWei() {
+      log('播放: 各就位...', 'info');
+      const ctx = initAudio();
+
+      // 如果上下文暂停，先恢复
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+        log('AudioContext 已恢复', 'success');
+      }
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.setValueAtTime(440, now + 0.1);
+      osc.frequency.setValueAtTime(523, now + 0.15);
+      osc.frequency.setValueAtTime(659, now + 0.25);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.85, now + 0.05);
+      gain.gain.setValueAtTime(0.85, now + 0.35);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.5);
+
+      log('✅ 各就位音效已播放', 'success');
+    }
+
+    // 预备音效
+    async function testYuBei() {
+      log('播放: 预备...', 'info');
+      const ctx = initAudio();
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523, now);
+      osc.frequency.setValueAtTime(523, now + 0.1);
+      osc.frequency.setValueAtTime(659, now + 0.2);
+      osc.frequency.setValueAtTime(784, now + 0.3);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.85, now + 0.05);
+      gain.gain.setValueAtTime(0.85, now + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.55);
+
+      log('✅ 预备音效已播放', 'success');
+    }
+
+    // 发令枪声
+    async function testGunshot() {
+      log('播放: 枪声...', 'info');
+      const ctx = initAudio();
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+
+      // 1. 瞬态爆破
+      const nb = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
+      const nd = nb.getChannelData(0);
+      for (let i = 0; i < nd.length; i++) {
+        nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.005));
+      }
+      const ns = ctx.createBufferSource();
+      ns.buffer = nb;
+      const nf = ctx.createBiquadFilter();
+      nf.type = 'highpass';
+      nf.frequency.value = 2000;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.9, now);
+      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+      ns.connect(nf);
+      nf.connect(ng);
+      ng.connect(ctx.destination);
+
+      // 2. 主枪声
+      const o1 = ctx.createOscillator();
+      const o2 = ctx.createOscillator();
+      const mg = ctx.createGain();
+      const lp = ctx.createBiquadFilter();
+
+      o1.type = 'sawtooth';
+      o1.frequency.setValueAtTime(150, now);
+      o1.frequency.exponentialRampToValueAtTime(80, now + 0.05);
+
+      o2.type = 'square';
+      o2.frequency.setValueAtTime(60, now);
+      o2.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+
+      lp.type = 'lowpass';
+      lp.frequency.value = 500;
+
+      mg.gain.setValueAtTime(0.7, now);
+      mg.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+      o1.connect(lp);
+      o2.connect(lp);
+      lp.connect(mg);
+      mg.connect(ctx.destination);
+
+      // 3. 混响
+      const ro = ctx.createOscillator();
+      const rg = ctx.createGain();
+
+      ro.type = 'sine';
+      ro.frequency.setValueAtTime(80, now + 0.01);
+      ro.frequency.exponentialRampToValueAtTime(30, now + 0.5);
+
+      rg.gain.setValueAtTime(0, now);
+      rg.gain.linearRampToValueAtTime(0.3, now + 0.02);
+      rg.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+      ro.connect(rg);
+      rg.connect(ctx.destination);
+
+      ns.start(now);
+      o1.start(now);
+      o2.start(now);
+      ro.start(now + 0.01);
+
+      ns.stop(now + 0.03);
+      o1.stop(now + 0.2);
+      o2.stop(now + 0.2);
+      ro.stop(now + 0.6);
+
+      log('🔫 枪声已播放', 'success');
+    }
+
+    // 召回音效
+    async function testRecall() {
+      log('播放: 召回信号...', 'info');
+      const ctx = initAudio();
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      for (let i = 0; i < 5; i++) {
+        const now = ctx.currentTime + i * 0.15;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.value = 660;
+
+        g.gain.setValueAtTime(0.5, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+        osc.connect(g);
+        g.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.1);
+      }
+
+      log('📢 召回信号已播放', 'success');
+    }
+
+    // 完整发令序列
+    async function testFullSequence() {
+      log('开始完整发令序列测试...', 'info');
+
+      // 各就位
+      await testGeJiuWei();
+      await delay(600);
+
+      // 预备
+      await delay(2000);
+      await testYuBei();
+      await delay(600);
+
+      // 等待随机时间
+      await delay(1500 + Math.random() * 1000);
+
+      // 枪声
+      await testGunshot();
+
+      log('🎉 完整发令序列测试完成!', 'success');
+    }
+
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 页面加载时检测
+    window.addEventListener('load', () => {
+      log('页面已加载', 'info');
+
+      // 尝试初始化 AudioContext（但会被暂停直到用户交互）
+      if (AudioContext) {
+        try {
+          const testCtx = new AudioContext();
+          log('Web Audio API 可用，状态: ' + testCtx.state, 'success');
+
+          // 注意：iOS Safari 上，这会创建一个暂停的上下文
+          // 必须在用户点击后才能调用 resume()
+
+          testCtx.close();
+        } catch (e) {
+          log('Web Audio API 初始化失败: ' + e.message, 'error');
+        }
+      }
+    });
+  </script>
+</body>
+</html>
