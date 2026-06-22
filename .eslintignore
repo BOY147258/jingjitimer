@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+docs/
+school-timer/
+*.min.js
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

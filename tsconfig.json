@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["js/*"],
+      "@config": ["js/config.js"],
+      "@utils/*": ["js/utils/*"]
+    },
+    "types": ["node", "jest"]
+  },
+  "include": [
+    "js/**/*.js",
+    "js/**/*.ts",
+    "*.js",
+    "*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    "docs",
+    "school-timer",
+    "**/*.min.js"
+  ],
+  "typeAcquisition": {
+    "enable": true,
+    "include": ["node"]
+  }
+}

@@ -1,17 +1,66 @@
 {
-  "name": "jingjin",
+  "name": "jingjitimer",
   "version": "1.0.0",
-  "description": "竞迹 JingJi — 精准计时 · 智能田径",
+  "description": "竞迹 JingJi — 精准计时 · 智能田径。支持AI发令检测、终点自动识别、慢动作回放与成绩管理。",
+  "keywords": [
+    "timer",
+    "athletics",
+    "track-and-field",
+    "sports",
+    "timing",
+    "stopwatch",
+    "ai",
+    "pwa"
+  ],
+  "author": {
+    "name": "BOY147258",
+    "email": "",
+    "url": "https://github.com/BOY147258"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/BOY147258/jingjitimer#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BOY147258/jingjitimer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BOY147258/jingjitimer/issues"
+  },
   "main": "serve.js",
   "type": "module",
-  "scripts": {
-    "start": "node ws-server.js",
-    "dev":   "node serve.js"
-  },
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "start": "node ws-server.js",
+    "dev": "node serve.js",
+    "server": "node serve.js",
+    "lint": "eslint js/*.js --fix",
+    "lint:check": "eslint js/*.js",
+    "format": "prettier --write \"js/**/*.js\" \"css/**/*.css\" \"*.html\"",
+    "format:check": "prettier --check \"js/**/*.js\" \"css/**/*.css\" \"*.html\"",
+    "test": "echo \"No tests configured\" && exit 0",
+    "prepare": "npx husky install",
+    "build": "echo \"No build step required - pure frontend\"",
+    "deploy": "npm run build && git push"
+  },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2"
+  },
+  "lint-staged": {
+    "*.js": ["prettier --write", "eslint --fix"],
+    "*.css": ["prettier --write"],
+    "*.html": ["prettier --write"]
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/BOY147258"
   }
 }

@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>竞迹 · 终点检测测试工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a14;
+      color: #fff;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #ff6200 0%, #ff8534 100%);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header h1 { font-size: 20px; }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .panel {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .video-container {
+      position: relative;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .video-container video {
+      width: 100%;
+      display: block;
+    }
+
+    .video-container canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .btn {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn:hover { background: rgba(255,255,255,0.2); }
+    .btn.primary {
+      background: #ff6200;
+      border-color: #ff6200;
+    }
+    .btn.primary:hover { background: #ff8534; }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .file-input-label {
+      background: rgba(255,255,255,0.1);
+      border: 1px dashed rgba(255,255,255,0.3);
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .file-input-label:hover {
+      border-color: #ff6200;
+      background: rgba(255,98,0,0.1);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #ff6200;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 4px;
+    }
+
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .results-table th,
+    .results-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .results-table th {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+    }
+
+    .results-table tr:hover {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .lane-badge {
+      background: #ff6200;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .time-value {
+      font-family: monospace;
+      font-size: 16px;
+      color: #00e676;
+    }
+
+    .confidence-bar {
+      width: 60px;
+      height: 6px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff6200, #00e676);
+      transition: width 0.3s;
+    }
+
+    .log-container {
+      background: #000;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .log-line {
+      color: rgba(255,255,255,0.7);
+    }
+
+    .log-line.warning { color: #ffd600; }
+    .log-line.error { color: #ff5252; }
+    .log-line.success { color: #00e676; }
+    .log-line.info { color: #64b5f6; }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .config-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .config-item label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .config-item input,
+    .config-item select {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .config-item input:focus,
+    .config-item select:focus {
+      outline: none;
+      border-color: #ff6200;
+    }
+
+    .zone-indicator {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .zone-bar {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .zone-segment {
+      height: 8px;
+      border-radius: 2px;
+      transition: all 0.1s;
+    }
+
+    .zone-segment.pre { background: rgba(100,150,255,0.3); flex: 1; }
+    .zone-segment.mid { background: rgba(255,200,0,0.3); flex: 1; }
+    .zone-segment.confirm { background: rgba(255,50,50,0.3); flex: 1; }
+
+    .zone-segment.active { box-shadow: 0 0 8px currentColor; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-badge.ready { background: rgba(0,230,100,0.2); color: #00e676; }
+    .status-badge.running { background: rgba(255,152,0,0.2); color: #ff9800; }
+    .status-badge.stopped { background: rgba(255,255,255,0.1); color: #999; }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-badge.running .status-dot {
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .preset-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-btn {
+      background: rgba(255,98,0,0.2);
+      border: 1px solid rgba(255,98,0,0.3);
+      color: #ff6200;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .preset-btn:hover {
+      background: rgba(255,98,0,0.3);
+    }
+
+    .preset-btn.active {
+      background: #ff6200;
+      color: #fff;
+    }
+
+    .video-progress {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+    }
+
+    .video-progress-fill {
+      height: 100%;
+      background: #ff6200;
+      width: 0%;
+      transition: width 0.1s;
+    }
+
+    .detection-markers {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .detection-marker {
+      background: rgba(0,0,0,0.7);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: monospace;
+    }
+
+    .crossing-flash {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px;
+      opacity: 0;
+      pointer-events: none;
+      animation: flash 0.5s ease-out;
+    }
+
+    @keyframes flash {
+      0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(2); }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>🏃 竞迹 · 终点检测测试工具</h1>
+    <div id="status" class="status-badge stopped">
+      <span class="status-dot"></span>
+      <span>已停止</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- 视频加载区 -->
+    <div class="panel">
+      <div class="panel-title">📹 视频加载</div>
+      <div class="grid">
+        <div>
+          <label class="file-input-label" id="fileLabel">
+            <div style="font-size: 32px; margin-bottom: 8px;">📁</div>
+            <div>点击选择视频文件</div>
+            <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px;">支持 MP4, WebM 格式</div>
+            <input type="file" id="videoInput" accept="video/*">
+          </label>
+          <div id="videoName" style="margin-top: 12px; font-size: 14px; color: rgba(255,255,255,0.7);"></div>
+        </div>
+        <div>
+          <div class="preset-buttons">
+            <div class="panel-title" style="width: 100%;">或使用示例视频 URL</div>
+            <button class="preset-btn" data-url="">无示例视频（手动上传）</button>
+            <button class="preset-btn" data-preset="simulate">模拟测试数据</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 配置区 -->
+    <div class="panel">
+      <div class="panel-title">⚙️ 检测参数配置</div>
+      <div class="config-grid">
+        <div class="config-item">
+          <label>灵敏度 (阈值 5-50)</label>
+          <input type="range" id="threshold" min="5" max="50" value="12">
+          <div style="font-size: 12px; color: #ff6200; text-align: center;" id="thresholdValue">12</div>
+        </div>
+        <div class="config-item">
+          <label>道次数</label>
+          <select id="laneCount">
+            <option value="4" selected>4 道</option>
+            <option value="6">6 道</option>
+            <option value="8">8 道</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>屏蔽期 (ms)</label>
+          <input type="number" id="blockDuration" value="2000" min="0" max="10000">
+        </div>
+        <div class="config-item">
+          <label>帧内插值</label>
+          <select id="interpolate">
+            <option value="true" selected>启用</option>
+            <option value="false">禁用</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>双区域验证</label>
+          <select id="dualZone">
+            <option value="true" selected>启用</option>
+            <option value="false">禁用</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>方向判断</label>
+          <select id="directionCheck">
+            <option value="true" selected>启用</option>
+            <option value="false">禁用</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视频显示区 -->
+    <div class="panel">
+      <div class="panel-title">🎬 视频预览</div>
+      <div class="grid">
+        <div class="video-container" id="videoContainer">
+          <video id="video" muted playsinline></video>
+          <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+          <div class="zone-indicator" id="zoneIndicator">
+            <div>区域运动</div>
+            <div class="zone-bar">
+              <div class="zone-segment pre" id="zonePre"></div>
+              <div class="zone-segment mid" id="zoneMid"></div>
+              <div class="zone-segment confirm" id="zoneConfirm"></div>
+            </div>
+          </div>
+          <div class="detection-markers" id="detectionMarkers"></div>
+          <div class="video-progress">
+            <div class="video-progress-fill" id="videoProgress"></div>
+          </div>
+        </div>
+
+        <!-- 控制区 -->
+        <div>
+          <div class="controls">
+            <button class="btn primary" id="btnLoad">
+              <span>▶</span> 加载视频
+            </button>
+            <button class="btn" id="btnStart" disabled>
+              <span>🚀</span> 开始检测
+            </button>
+            <button class="btn" id="btnStop" disabled>
+              <span>⏹</span> 停止
+            </button>
+            <button class="btn" id="btnReset">
+              <span>🔄</span> 重置
+            </button>
+          </div>
+
+          <div style="margin-top: 20px;">
+            <div class="panel-title">📊 实时统计</div>
+            <div class="stats-grid" id="statsGrid">
+              <div class="stat-card">
+                <div class="stat-value" id="statFrames">0</div>
+                <div class="stat-label">分析帧数</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="statFps">0</div>
+                <div class="stat-label">FPS</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="statBlobs">0</div>
+                <div class="stat-label">检测到Blob</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="statCrossings">0</div>
+                <div class="stat-label">冲线次数</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="statFalse">0</div>
+                <div class="stat-label">误触发</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="statAccuracy">--</div>
+                <div class="stat-label">预估精度</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 结果区 -->
+    <div class="panel">
+      <div class="panel-title">🏆 冲线结果</div>
+      <div id="resultsContainer" style="overflow-x: auto;">
+        <table class="results-table" id="resultsTable">
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>道次</th>
+              <th>冲线时间</th>
+              <th>置信度</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: rgba(255,255,255,0.3); padding: 40px;">
+                暂无冲线数据
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 日志区 -->
+    <div class="panel">
+      <div class="panel-title">📝 检测日志</div>
+      <div class="log-container" id="logContainer">
+        <div class="log-line info">[系统] 终点检测测试工具已就绪</div>
+      </div>
+    </div>
+
+    <!-- 测试说明 -->
+    <div class="panel">
+      <div class="panel-title">📖 使用说明</div>
+      <div style="font-size: 14px; line-height: 1.8; color: rgba(255,255,255,0.7);">
+        <p><strong>测试步骤：</strong></p>
+        <ol style="margin: 12px 0 12px 20px;">
+          <li>点击"加载视频"按钮，选择一个包含短跑冲线场景的视频</li>
+          <li>调整检测参数（灵敏度、道次数等）</li>
+          <li>点击"开始检测"按钮，观察视频中运动员冲线时的检测效果</li>
+          <li>查看实时统计和冲线结果</li>
+        </ol>
+        <p><strong>参数说明：</strong></p>
+        <ul style="margin: 12px 0 12px 20px;">
+          <li><strong>灵敏度</strong>：值越低越灵敏，但也更容易误触发</li>
+          <li><strong>屏蔽期</strong>：发令后多少毫秒内不检测（防止起跑误触发）</li>
+          <li><strong>双区域验证</strong>：启用后需要连续通过两个区域才判定为冲线</li>
+          <li><strong>方向判断</strong>：启用后只检测向终点线接近的运动</li>
+        </ul>
+        <p><strong>验证方法：</strong></p>
+        <ul style="margin: 12px 0 12px 20px;">
+          <li>观察"冲线次数"是否与实际冲线人数一致</li>
+          <li>检查"误触发"次数，应尽可能为0</li>
+          <li>对比"预估精度"，目标值应小于10ms</li>
+          <li>查看日志中的详细检测信息</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ═══════════════════════════════════════════════════════════════
+    // 终点检测器 V4（简化版，用于测试）
+    // ═══════════════════════════════════════════════════════════════
+
+    class FinishLineTester {
+      constructor() {
+        // 配置
+        this._threshold = 12;
+        this._laneCount = 4;
+        this._blockDuration = 2000;
+        this._interpolate = true;
+        this._dualZone = true;
+        this._directionCheck = true;
+
+        // 状态
+        this._running = false;
+        this._video = null;
+        this._canvas = null;
+        this._ctx = null;
+        this._prevSlice = null;
+        this._linePos = 0.5;
+        this._raceStartTime = null;
+        this._isBlocked = true;
+
+        // 统计
+        this._stats = {
+          frames: 0,
+          fps: 0,
+          blobs: 0,
+          crossings: 0,
+          falseTriggers: 0,
+          lastFpsTime: 0,
+          lastFpsFrames: 0,
+        };
+
+        // 结果
+        this._results = [];
+        this._crossings = [];
+
+        // 回调
+        this.onCrossing = null;
+        this.onLevel = null;
+        this.onLog = null;
+        this.onStats = null;
+
+        // 分析用画布
+        this._analyzeCanvas = null;
+        this._analyzeCtx = null;
+        this._W = 64;
+        this._H = 160;
+      }
+
+      init(video, canvas, laneCount = 4) {
+        this._video = video;
+        this._canvas = canvas;
+        this._laneCount = laneCount;
+        this._analyzeCanvas = document.createElement('canvas');
+        this._analyzeCanvas.width = this._W;
+        this._analyzeCanvas.height = this._H;
+        this._analyzeCtx = this._analyzeCanvas.getContext('2d', { willReadFrequently: true });
+      }
+
+      setConfig(config) {
+        Object.assign(this, config);
+      }
+
+      start() {
+        if (this._running) return;
+        this._running = true;
+        this._stats = { frames: 0, fps: 0, blobs: 0, crossings: 0, falseTriggers: 0, lastFpsTime: performance.now(), lastFpsFrames: 0 };
+        this._results = [];
+        this._crossings = [];
+        this._prevSlice = null;
+        this._isBlocked = true;
+        this._raceStartTime = performance.now();
+        this._loop();
+        this.log('info', '🚀 检测已开始');
+      }
+
+      stop() {
+        this._running = false;
+        this.log('info', '⏹ 检测已停止');
+      }
+
+      reset() {
+        this.stop();
+        this._stats = { frames: 0, fps: 0, blobs: 0, crossings: 0, falseTriggers: 0, lastFpsTime: performance.now(), lastFpsFrames: 0 };
+        this._results = [];
+        this._crossings = [];
+        this._prevSlice = null;
+        this._isBlocked = true;
+      }
+
+      // 模拟发令枪响
+      fireSignal() {
+        this._raceStartTime = performance.now();
+        this._isBlocked = false;
+        this.log('success', '🔫 发令枪响！解除屏蔽');
+      }
+
+      _loop() {
+        if (!this._running) return;
+
+        this._analyze();
+        this._updateFps();
+        this._drawOverlay();
+
+        requestAnimationFrame(() => this._loop());
+      }
+
+      _analyze() {
+        if (!this._video || this._video.readyState < 2) return;
+
+        const W = this._W, H = this._H;
+        const vw = this._video.videoWidth || 640;
+        const vh = this._video.videoHeight || 480;
+
+        // 采集帧条
+        const srcX = Math.max(0, Math.round(this._linePos * vw) - W);
+        this._analyzeCtx.drawImage(this._video, srcX, 0, W * 2, vh, 0, 0, W * 2, H);
+
+        const slice = this._analyzeCtx.getImageData(0, 0, W * 2, H);
+
+        if (!this._prevSlice) {
+          this._prevSlice = new Uint8Array(slice.data.length);
+          this._prevSlice.set(slice.data);
+          return;
+        }
+
+        this._stats.frames++;
+
+        // 分析三个区域
+        const zoneWidth = W;
+        const zoneMotion = [0, 0, 0]; // pre, mid, confirm
+        const zoneDirection = [0, 0, 0];
+
+        for (let zone = 0; zone < 3; zone++) {
+          const offsetX = zone * zoneWidth;
+          for (let y = 0; y < H; y++) {
+            for (let x = 0; x < zoneWidth; x++) {
+              const idx = (y * W * 2 + offsetX + x) * 4;
+              if (idx >= slice.data.length || idx < 0) continue;
+
+              const rDiff = Math.abs(slice.data[idx] - this._prevSlice[idx]);
+              const gDiff = Math.abs(slice.data[idx + 1] - this._prevSlice[idx + 1]);
+              const bDiff = Math.abs(slice.data[idx + 2] - this._prevSlice[idx + 2]);
+              const diff = (rDiff + gDiff + bDiff) / 3;
+
+              zoneMotion[zone] += diff;
+
+              // 方向
+              const dir = slice.data[idx] - this._prevSlice[idx];
+              zoneDirection[zone] += dir;
+            }
+          }
+          zoneMotion[zone] /= (zoneWidth * H);
+          zoneDirection[zone] /= (zoneWidth * H);
+        }
+
+        this._prevSlice.set(slice.data);
+
+        // 计算总运动量
+        const totalMotion = (zoneMotion[0] + zoneMotion[1] + zoneMotion[2]) / 3;
+        const level = Math.min(1, totalMotion / this._threshold);
+
+        // 检查屏蔽期
+        const raceTime = performance.now() - this._raceStartTime;
+        if (raceTime < this._blockDuration) {
+          this.onLevel?.({ level, zoneMotion, zoneDirection, blocked: true });
+          return;
+        }
+
+        // 检测冲线
+        const isApproaching = zoneDirection[2] > 1; // 确认区方向
+        const hasMotion = zoneMotion[2] > this._threshold * 0.8;
+        const hasPreMotion = zoneMotion[0] > this._threshold * 0.3; // 预检测区有运动
+
+        if (this._dualZone) {
+          // 双区域验证模式
+          if (hasMotion && isApproaching) {
+            if (hasPreMotion || !this._directionCheck) {
+              this._triggerCrossing(0, zoneMotion[2]);
+            } else {
+              this.log('warning', `⚠️ 过滤：无预检测区运动`);
+              this._stats.falseTriggers++;
+            }
+          }
+        } else {
+          // 简单模式
+          if (hasMotion) {
+            this._triggerCrossing(0, zoneMotion[2]);
+          }
+        }
+
+        this.onLevel?.({ level, zoneMotion, zoneDirection, blocked: false });
+      }
+
+      _triggerCrossing(lane, motion) {
+        const now = performance.now();
+        const raceTime = now - this._raceStartTime;
+
+        // 帧内插值
+        let finishTime = raceTime;
+        if (this._interpolate) {
+          finishTime = raceTime - 5; // 假设运动发生在帧的30%处
+        }
+
+        this._crossings.push({
+          lane,
+          finishTime,
+          motion,
+          confidence: Math.min(1, motion / (this._threshold * 2)),
+          timestamp: now,
+        });
+
+        this._stats.crossings++;
+        this.log('success', `🏁 道次 ${lane + 1} 冲线！时间: ${finishTime.toFixed(1)}ms 置信度: ${(motion / (this._threshold * 2) * 100).toFixed(0)}%`);
+
+        this.onCrossing?.(this._crossings[this._crossings.length - 1]);
+      }
+
+      _updateFps() {
+        const now = performance.now();
+        this._stats.frames++;
+
+        if (now - this._stats.lastFpsTime >= 1000) {
+          this._stats.fps = Math.round((this._stats.frames - this._stats.lastFpsFrames) * 1000 / (now - this._stats.lastFpsTime));
+          this._stats.lastFpsTime = now;
+          this._stats.lastFpsFrames = this._stats.frames;
+          this.onStats?.({ ...this._stats });
+        }
+      }
+
+      _drawOverlay() {
+        if (!this._canvas) return;
+
+        const ctx = this._canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const dW = this._canvas.offsetWidth * dpr;
+        const dH = this._canvas.offsetHeight * dpr;
+
+        if (dW === 0 || dH === 0) return;
+        if (this._canvas.width !== dW || this._canvas.height !== dH) {
+          this._canvas.width = dW;
+          this._canvas.height = dH;
+        }
+
+        ctx.clearRect(0, 0, dW, dH);
+
+        // 绘制终点线
+        const lineX = Math.floor(this._linePos * dW);
+
+        ctx.strokeStyle = this._isBlocked ? '#ff9800' : '#00e676';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = ctx.strokeStyle;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(lineX, 0);
+        ctx.lineTo(lineX, dH);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 绘制区域标签
+        const zoneW = dW * 0.15;
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(100,150,255,0.5)';
+        ctx.fillText('预检', dW * 0.15, 15);
+        ctx.fillStyle = 'rgba(255,200,0,0.5)';
+        ctx.fillText('中间', dW * 0.5, 15);
+        ctx.fillStyle = 'rgba(255,50,50,0.5)';
+        ctx.fillText('终点', lineX, 15);
+
+        // 绘制道次分隔线
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.setLineDash([4, 4]);
+        for (let i = 1; i < this._laneCount; i++) {
+          const y = (i / this._laneCount) * dH;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(dW, y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // 绘制道次标签
+        ctx.font = 'bold 12px sans-serif';
+        for (let i = 0; i < this._laneCount; i++) {
+          const y = (i + 0.5) / this._laneCount * dH;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillText(`${i + 1}道`, 25, y + 4);
+        }
+      }
+
+      log(level, message) {
+        this.onLog?.(level, message);
+      }
+
+      getResults() {
+        return [...this._crossings];
+      }
+
+      getStats() {
+        return { ...this._stats };
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 测试工具初始化
+    // ═══════════════════════════════════════════════════════════════
+
+    const tester = new FinishLineTester();
+
+    // DOM 元素
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlayCanvas');
+    const videoInput = document.getElementById('videoInput');
+    const btnLoad = document.getElementById('btnLoad');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const btnReset = document.getElementById('btnReset');
+    const logContainer = document.getElementById('logContainer');
+    const resultsBody = document.getElementById('resultsBody');
+    const statusEl = document.getElementById('status');
+
+    // 统计元素
+    const statFrames = document.getElementById('statFrames');
+    const statFps = document.getElementById('statFps');
+    const statBlobs = document.getElementById('statBlobs');
+    const statCrossings = document.getElementById('statCrossings');
+    const statFalse = document.getElementById('statFalse');
+    const statAccuracy = document.getElementById('statAccuracy');
+
+    // 区域指示器
+    const zonePre = document.getElementById('zonePre');
+    const zoneMid = document.getElementById('zoneMid');
+    const zoneConfirm = document.getElementById('zoneConfirm');
+
+    // 配置元素
+    const thresholdInput = document.getElementById('threshold');
+    const thresholdValue = document.getElementById('thresholdValue');
+    const laneCountSelect = document.getElementById('laneCount');
+    const blockDurationInput = document.getElementById('blockDuration');
+    const interpolateSelect = document.getElementById('interpolate');
+    const dualZoneSelect = document.getElementById('dualZone');
+    const directionCheckSelect = document.getElementById('directionCheck');
+
+    // 事件绑定
+    thresholdInput.addEventListener('input', () => {
+      thresholdValue.textContent = thresholdInput.value;
+      tester._threshold = parseInt(thresholdInput.value);
+    });
+
+    laneCountSelect.addEventListener('change', () => {
+      tester._laneCount = parseInt(laneCountSelect.value);
+      tester.init(video, canvas, tester._laneCount);
+    });
+
+    blockDurationInput.addEventListener('change', () => {
+      tester._blockDuration = parseInt(blockDurationInput.value);
+    });
+
+    interpolateSelect.addEventListener('change', () => {
+      tester._interpolate = interpolateSelect.value === 'true';
+    });
+
+    dualZoneSelect.addEventListener('change', () => {
+      tester._dualZone = dualZoneSelect.value === 'true';
+    });
+
+    directionCheckSelect.addEventListener('change', () => {
+      tester._directionCheck = directionCheckSelect.value === 'true';
+    });
+
+    // 视频选择
+    videoInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        document.getElementById('videoName').textContent = `已加载: ${file.name}`;
+        log('info', `📹 视频已加载: ${file.name}`);
+      }
+    });
+
+    btnLoad.addEventListener('click', () => {
+      videoInput.click();
+    });
+
+    // 视频加载完成后
+    video.addEventListener('loadedmetadata', () => {
+      btnStart.disabled = false;
+      tester.init(video, canvas, tester._laneCount);
+      log('info', `📐 视频尺寸: ${video.videoWidth}x${video.videoHeight}`);
+    });
+
+    // 开始检测
+    btnStart.addEventListener('click', () => {
+      if (!video.src) {
+        alert('请先加载视频');
+        return;
+      }
+
+      tester.reset();
+      video.currentTime = 0;
+      video.play();
+      tester.start();
+
+      // 2秒后自动发令
+      setTimeout(() => {
+        tester.fireSignal();
+      }, 2000);
+
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      updateStatus('running', '检测中');
+    });
+
+    // 停止
+    btnStop.addEventListener('click', () => {
+      video.pause();
+      tester.stop();
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+      updateStatus('stopped', '已停止');
+    });
+
+    // 重置
+    btnReset.addEventListener('click', () => {
+      video.pause();
+      video.currentTime = 0;
+      tester.reset();
+      resultsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: rgba(255,255,255,0.3); padding: 40px;">暂无冲线数据</td></tr>';
+      btnStart.disabled = !video.src;
+      btnStop.disabled = true;
+      updateStatus('ready', '已就绪');
+      updateStats(tester.getStats());
+    });
+
+    // 模拟测试按钮
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const preset = btn.dataset.preset;
+        if (preset === 'simulate') {
+          runSimulation();
+        }
+      });
+    });
+
+    // 回调函数
+    tester.onCrossing = (crossing) => {
+      updateResults();
+    };
+
+    tester.onLevel = (data) => {
+      // 更新区域指示器
+      const maxMotion = Math.max(...data.zoneMotion, 1);
+      zonePre.style.width = `${(data.zoneMotion[0] / maxMotion * 100)}%`;
+      zoneMid.style.width = `${(data.zoneMotion[1] / maxMotion * 100)}%`;
+      zoneConfirm.style.width = `${(data.zoneMotion[2] / maxMotion * 100)}%`;
+
+      zonePre.classList.toggle('active', data.zoneMotion[0] > tester._threshold * 0.3);
+      zoneMid.classList.toggle('active', data.zoneMotion[1] > tester._threshold * 0.3);
+      zoneConfirm.classList.toggle('active', data.zoneMotion[2] > tester._threshold * 0.8);
+
+      // 更新进度条
+      if (video.duration) {
+        const progress = (video.currentTime / video.duration) * 100;
+        document.getElementById('videoProgress').style.width = `${progress}%`;
+      }
+    };
+
+    tester.onStats = (stats) => {
+      updateStats(stats);
+    };
+
+    tester.onLog = (level, message) => {
+      addLog(level, message);
+    };
+
+    // 工具函数
+    function updateStatus(state, text) {
+      statusEl.className = `status-badge ${state}`;
+      statusEl.querySelector('span:last-child').textContent = text;
+    }
+
+    function updateStats(stats) {
+      statFrames.textContent = stats.frames || 0;
+      statFps.textContent = stats.fps || 0;
+      statBlobs.textContent = stats.blobs || 0;
+      statCrossings.textContent = stats.crossings || 0;
+      statFalse.textContent = stats.falseTriggers || 0;
+
+      // 预估精度
+      if (stats.crossings > 0) {
+        const accuracy = stats.falseTriggers === 0 ? '~5ms' : `~${(10 + stats.falseTriggers * 5)}ms`;
+        statAccuracy.textContent = accuracy;
+      }
+    }
+
+    function updateResults() {
+      const results = tester.getResults();
+      if (results.length === 0) return;
+
+      resultsBody.innerHTML = results.map((r, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td><span class="lane-badge">${r.lane + 1}道</span></td>
+          <td><span class="time-value">${r.finishTime.toFixed(1)}ms</span></td>
+          <td>
+            <div class="confidence-bar">
+              <div class="confidence-fill" style="width: ${r.confidence * 100}%"></div>
+            </div>
+          </td>
+          <td style="color: ${r.confidence > 0.7 ? '#00e676' : '#ffd600'}">
+            ${r.confidence > 0.7 ? '✓ 有效' : '⚠ 待确认'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function addLog(level, message) {
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = `log-line ${level}`;
+      div.textContent = `[${time}] ${message}`;
+      logContainer.appendChild(div);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function log(level, message) {
+      addLog(level, message);
+    }
+
+    // 模拟测试
+    function runSimulation() {
+      log('info', '🎭 启动模拟测试...');
+
+      const results = [];
+      const laneCount = parseInt(laneCountSelect.value);
+
+      // 模拟多人冲线
+      for (let i = 0; i < laneCount; i++) {
+        setTimeout(() => {
+          const fakeCrossing = {
+            lane: i,
+            finishTime: 10000 + i * 100 + Math.random() * 50,
+            motion: 20 + Math.random() * 10,
+            confidence: 0.7 + Math.random() * 0.3,
+            timestamp: performance.now(),
+          };
+          tester._crossings.push(fakeCrossing);
+          tester._stats.crossings++;
+          log('success', `🏁 模拟冲线: 道次 ${i + 1}, 时间: ${fakeCrossing.finishTime.toFixed(1)}ms`);
+          updateResults();
+        }, 5000 + i * 300);
+      }
+    }
+
+    // 初始化
+    updateStatus('ready', '已就绪');
+    log('info', '✅ 测试工具已就绪，请加载视频或使用模拟测试');
+  </script>
+</body>
+</html>

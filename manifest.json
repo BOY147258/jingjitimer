@@ -1,13 +1,22 @@
 {
-  "name": "竞迹 JingJi",
-  "short_name": "竞迹",
+  "name": "竞迹 JingJi - 精准计时",
+  "short_name": "竞迹计时",
   "description": "竞迹 — 精准计时 · 智能田径。支持AI发令检测、终点自动识别、慢动作回放与成绩管理。",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#080810",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "theme_color": "#080810",
+  "background_color": "#080810",
   "lang": "zh-CN",
+  "dir": "ltr",
+  "categories": ["sports", "utilities", "productivity"],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "handle_links": "preferred",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icons/icon.svg",
@@ -26,6 +35,53 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "开始计时",
+      "short_name": "计时",
+      "description": "快速进入计时界面",
+      "url": "./index.html?mode=timer",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "管理后台",
+      "short_name": "管理",
+      "description": "进入成绩管理后台",
+      "url": "./admin.html",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "扫码连接",
+      "short_name": "扫码",
+      "description": "扫描二维码连接设备",
+      "url": "./qrcode.html",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/timer-screen.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "计时主界面"
+    },
+    {
+      "src": "screenshots/admin-screen.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "管理后台"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }

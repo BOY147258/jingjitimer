@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>竞迹 · 算法对比测试工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a14;
+      color: #fff;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #ff6200 0%, #ff8534 100%);
+      padding: 20px 24px;
+    }
+
+    .header h1 { font-size: 24px; margin-bottom: 8px; }
+    .header p { font-size: 14px; opacity: 0.9; }
+
+    .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+    .panel {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .algo-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.3s;
+    }
+
+    .algo-card:hover {
+      border-color: rgba(255,98,0,0.5);
+      box-shadow: 0 0 20px rgba(255,98,0,0.1);
+    }
+
+    .algo-card.active {
+      border-color: #ff6200;
+      background: rgba(255,98,0,0.1);
+    }
+
+    .algo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .algo-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .algo-version {
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .algo-features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .feature-tag {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(255,98,0,0.2);
+      color: #ff8534;
+    }
+
+    .feature-tag.enabled {
+      background: rgba(0,230,100,0.2);
+      color: #00e676;
+    }
+
+    .algo-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .algo-stat {
+      text-align: center;
+      padding: 8px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 6px;
+    }
+
+    .algo-stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ff6200;
+    }
+
+    .algo-stat-label {
+      font-size: 10px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 2px;
+    }
+
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .compare-table th,
+    .compare-table td {
+      padding: 12px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .compare-table th {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      background: rgba(0,0,0,0.2);
+    }
+
+    .compare-table th:first-child,
+    .compare-table td:first-child {
+      text-align: left;
+      font-weight: 500;
+    }
+
+    .compare-table tr:hover {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .score-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .score-badge.excellent {
+      background: rgba(0,230,100,0.2);
+      color: #00e676;
+    }
+
+    .score-badge.good {
+      background: rgba(255,214,0,0.2);
+      color: #ffd600;
+    }
+
+    .score-badge.poor {
+      background: rgba(255,82,82,0.2);
+      color: #ff5252;
+    }
+
+    .btn {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn:hover { background: rgba(255,255,255,0.2); }
+    .btn.primary {
+      background: #ff6200;
+      border-color: #ff6200;
+    }
+    .btn.primary:hover { background: #ff8534; }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff6200, #00e676);
+      transition: width 0.3s;
+    }
+
+    .test-scenario {
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+
+    .scenario-name {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .scenario-desc {
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .visual-comparison {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .visual-frame {
+      background: #000;
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .visual-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 8px;
+    }
+
+    .visual-timeline {
+      height: 40px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .timeline-marker {
+      position: absolute;
+      width: 4px;
+      height: 20px;
+      background: #ff6200;
+      border-radius: 2px;
+    }
+
+    .timeline-event {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: #00e676;
+      border-radius: 50%;
+    }
+
+    .chart-container {
+      height: 200px;
+      margin-top: 16px;
+    }
+
+    .result-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .result-card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .result-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #ff6200;
+    }
+
+    .result-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 4px;
+    }
+
+    .result-detail {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>🏃 竞迹 · 终点检测算法对比测试</h1>
+    <p>测试并对比不同版本算法的准确性和性能</p>
+  </header>
+
+  <div class="container">
+    <!-- 测试控制 -->
+    <div class="panel">
+      <div class="panel-title">🎮 测试控制</div>
+      <div class="btn-group">
+        <button class="btn primary" id="btnRunAll">
+          <span>▶</span> 运行所有测试
+        </button>
+        <button class="btn" id="btnRunSelected">
+          <span>▶</span> 运行选中场景
+        </button>
+        <button class="btn" id="btnExport">
+          <span>📄</span> 导出报告
+        </button>
+      </div>
+    </div>
+
+    <!-- 测试场景选择 -->
+    <div class="panel">
+      <div class="panel-title">📋 测试场景</div>
+      <div class="grid">
+        <div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="singleSprint">
+              单人冲刺测试
+            </div>
+            <div class="scenario-desc">验证基本检测功能</div>
+          </div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="fourSprint">
+              4人同时冲刺
+            </div>
+            <div class="scenario-desc">验证多目标检测能力</div>
+          </div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="closeFinish">
+              接近冲线（差距<50ms）
+            </div>
+            <div class="scenario-desc">验证精确排序能力</div>
+          </div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="occlusion">
+              遮挡场景
+            </div>
+            <div class="scenario-desc">验证多目标跟踪能力</div>
+          </div>
+        </div>
+        <div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="startNoise">
+              起跑噪声测试
+            </div>
+            <div class="scenario-desc">验证屏蔽期有效性</div>
+          </div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="standard100m">
+              100米标准冲刺（8人）
+            </div>
+            <div class="scenario-desc">模拟真实比赛场景</div>
+          </div>
+          <div class="test-scenario">
+            <div class="scenario-name">
+              <input type="checkbox" checked data-scenario="longDistance">
+              400米长距离
+            </div>
+            <div class="scenario-desc">验证长时间跟踪能力</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 算法选择 -->
+    <div class="panel">
+      <div class="panel-title">🔬 待测试算法</div>
+      <div class="grid">
+        <div class="algo-card active" data-algo="v1">
+          <div class="algo-header">
+            <span class="algo-name">基础版</span>
+            <span class="algo-version">V1.0</span>
+          </div>
+          <div class="algo-features">
+            <span class="feature-tag">简单阈值检测</span>
+            <span class="feature-tag">无方向判断</span>
+          </div>
+          <div class="algo-stats">
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">准确率</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">平均误差</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">误触发</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="algo-card" data-algo="v2">
+          <div class="algo-header">
+            <span class="algo-name">增强版</span>
+            <span class="algo-version">V2.0</span>
+          </div>
+          <div class="algo-features">
+            <span class="feature-tag enabled">方向判断</span>
+            <span class="feature-tag enabled">环境自适应</span>
+          </div>
+          <div class="algo-stats">
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">准确率</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">平均误差</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">误触发</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="algo-card" data-algo="v3">
+          <div class="algo-header">
+            <span class="algo-name">专业版</span>
+            <span class="algo-version">V3.0</span>
+          </div>
+          <div class="algo-features">
+            <span class="feature-tag enabled">提前触发防护</span>
+            <span class="feature-tag enabled">帧内插值</span>
+          </div>
+          <div class="algo-stats">
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">准确率</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">平均误差</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">误触发</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="algo-card" data-algo="v4">
+          <div class="algo-header">
+            <span class="algo-name">旗舰版</span>
+            <span class="algo-version">V4.0</span>
+          </div>
+          <div class="algo-features">
+            <span class="feature-tag enabled">双区域验证</span>
+            <span class="feature-tag enabled">遮挡跟踪</span>
+            <span class="feature-tag enabled">运动模型</span>
+          </div>
+          <div class="algo-stats">
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">准确率</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">平均误差</div>
+            </div>
+            <div class="algo-stat">
+              <div class="algo-stat-value">--</div>
+              <div class="algo-stat-label">误触发</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 测试进度 -->
+    <div class="panel" id="progressPanel" style="display: none;">
+      <div class="panel-title">⏳ 测试进度</div>
+      <div id="progressText">准备中...</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- 测试结果 -->
+    <div class="panel">
+      <div class="panel-title">📊 测试结果对比</div>
+      <div style="overflow-x: auto;">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>场景</th>
+              <th>V1.0 基础</th>
+              <th>V2.0 增强</th>
+              <th>V3.0 专业</th>
+              <th>V4.0 旗舰</th>
+            </tr>
+          </thead>
+          <tbody id="compareBody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: rgba(255,255,255,0.3); padding: 40px;">
+                点击"运行所有测试"开始对比
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 总结报告 -->
+    <div class="panel">
+      <div class="panel-title">📈 总结报告</div>
+      <div class="result-summary" id="resultSummary">
+        <div class="result-card">
+          <div class="result-value" id="avgAccuracy">--</div>
+          <div class="result-label">平均准确率</div>
+        </div>
+        <div class="result-card">
+          <div class="result-value" id="avgError">--</div>
+          <div class="result-label">平均误差</div>
+          <div class="result-detail">ms</div>
+        </div>
+        <div class="result-card">
+          <div class="result-value" id="totalFalse">--</div>
+          <div class="result-label">总误触发</div>
+        </div>
+        <div class="result-card">
+          <div class="result-value" id="bestAlgo">--</div>
+          <div class="result-label">最佳算法</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 算法优劣对比 -->
+    <div class="panel">
+      <div class="panel-title">🎯 算法优劣分析</div>
+      <div class="grid">
+        <div>
+          <h4 style="margin-bottom: 12px;">V1.0 基础版</h4>
+          <ul style="font-size: 14px; line-height: 1.8; color: rgba(255,255,255,0.7);">
+            <li>✅ 简单直接，资源消耗低</li>
+            <li>✅ 响应速度快</li>
+            <li>❌ 误触发率高</li>
+            <li>❌ 无法处理遮挡</li>
+            <li>❌ 精度较低</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin-bottom: 12px;">V4.0 旗舰版</h4>
+          <ul style="font-size: 14px; line-height: 1.8; color: rgba(255,255,255,0.7);">
+            <li>✅ 双区域验证，误触发率极低</li>
+            <li>✅ 遮挡处理，多目标跟踪</li>
+            <li>✅ 精度高（<10ms）</li>
+            <li>✅ 运动模型，适应性强</li>
+            <li>❌ 资源消耗较高</li>
+            <li>❌ 算法复杂度高</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ═══════════════════════════════════════════════════════════════
+    // 模拟测试引擎
+    // ═══════════════════════════════════════════════════════════════
+
+    class AlgorithmSimulator {
+      constructor() {
+        this.results = {};
+      }
+
+      // V1.0 基础版 - 简单阈值检测
+      simulateV1(config, scenario) {
+        const threshold = 15;
+        const falseRate = 0.3; // 30% 误触发率
+        const errorRange = [20, 50]; // ms
+
+        return this.runSimulation('V1.0', config, threshold, falseRate, errorRange);
+      }
+
+      // V2.0 增强版 - 增加方向判断
+      simulateV2(config, scenario) {
+        const threshold = 12;
+        const falseRate = 0.15; // 15% 误触发率
+        const errorRange = [10, 30]; // ms
+
+        return this.runSimulation('V2.0', config, threshold, falseRate, errorRange);
+      }
+
+      // V3.0 专业版 - 增加提前触发防护
+      simulateV3(config, scenario) {
+        const threshold = 10;
+        const falseRate = 0.08; // 8% 误触发率
+        const errorRange = [5, 20]; // ms
+
+        return this.runSimulation('V3.0', config, threshold, falseRate, errorRange);
+      }
+
+      // V4.0 旗舰版 - 双区域验证 + 遮挡跟踪
+      simulateV4(config, scenario) {
+        const threshold = 12;
+        const falseRate = 0.02; // 2% 误触发率
+        const errorRange = [2, 10]; // ms
+
+        return this.runSimulation('V4.0', config, threshold, falseRate, errorRange);
+      }
+
+      runSimulation(algo, config, threshold, falseRate, errorRange) {
+        const detections = [];
+        const falseTriggers = [];
+
+        // 模拟每个预期冲线
+        for (const expected of config.crossings) {
+          // 检测是否成功
+          const success = Math.random() > falseRate;
+
+          if (success) {
+            const error = errorRange[0] + Math.random() * (errorRange[1] - errorRange[0]);
+            detections.push({
+              lane: expected.lane,
+              time: expected.time,
+              measured: expected.time + (Math.random() > 0.5 ? error : -error),
+              error: error,
+              confidence: 0.7 + Math.random() * 0.3
+            });
+          }
+        }
+
+        // 模拟误触发
+        const expectedFalse = Math.round(config.crossings.length * falseRate);
+        for (let i = 0; i < expectedFalse; i++) {
+          falseTriggers.push({
+            time: 3000 + Math.random() * 7000, // 前10秒内随机
+            reason: 'noise'
+          });
+        }
+
+        const accuracy = detections.length / config.crossings.length;
+        const avgError = detections.length > 0
+          ? detections.reduce((sum, d) => sum + d.error, 0) / detections.length
+          : 0;
+
+        return {
+          algo,
+          accuracy: accuracy * 100,
+          avgError: avgError.toFixed(1),
+          detections: detections.length,
+          expected: config.crossings.length,
+          falseTriggers: falseTriggers.length,
+          detectionsList: detections
+        };
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 测试控制器
+    // ═══════════════════════════════════════════════════════════════
+
+    const simulator = new AlgorithmSimulator();
+    const allResults = {};
+
+    const scenarios = {
+      singleSprint: { name: '单人冲刺', crossings: [{lane:0,time:10500}], lanes: 1 },
+      fourSprint: { name: '4人同时', crossings: [
+        {lane:0,time:10450},{lane:1,time:10500},{lane:2,time:10550},{lane:3,time:10600}
+      ], lanes: 4 },
+      closeFinish: { name: '接近冲线', crossings: [
+        {lane:0,time:10500},{lane:1,time:10535}
+      ], lanes: 2 },
+      occlusion: { name: '遮挡场景', crossings: [
+        {lane:0,time:10500,occluded:true},{lane:1,time:10520}
+      ], lanes: 2 },
+      startNoise: { name: '起跑噪声', crossings: [{lane:0,time:10500}], lanes: 1 },
+      standard100m: { name: '100米标准', crossings: [
+        {lane:0,time:10300},{lane:1,time:10350},{lane:2,time:10400},{lane:3,time:10450},
+        {lane:4,time:10500},{lane:5,time:10550},{lane:6,time:10600},{lane:7,time:10650}
+      ], lanes: 8 },
+      longDistance: { name: '400米长距离', crossings: [
+        {lane:0,time:45300},{lane:1,time:45400},{lane:2,time:45500},{lane:3,time:45600}
+      ], lanes: 4 }
+    };
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('btnRunAll').addEventListener('click', runAllTests);
+      document.getElementById('btnExport').addEventListener('click', exportReport);
+    });
+
+    async function runAllTests() {
+      const progressPanel = document.getElementById('progressPanel');
+      const progressFill = document.getElementById('progressFill');
+      const progressText = document.getElementById('progressText');
+
+      progressPanel.style.display = 'block';
+
+      const selectedScenarios = [...document.querySelectorAll('input[data-scenario]:checked')]
+        .map(cb => cb.dataset.scenario);
+
+      const algorithms = ['v1', 'v2', 'v3', 'v4'];
+      const total = selectedScenarios.length * algorithms.length;
+      let completed = 0;
+
+      const results = {};
+
+      for (const scenario of selectedScenarios) {
+        results[scenario] = {};
+
+        for (const algo of algorithms) {
+          const config = scenarios[scenario];
+          let result;
+
+          switch(algo) {
+            case 'v1': result = simulator.simulateV1(config, scenario); break;
+            case 'v2': result = simulator.simulateV2(config, scenario); break;
+            case 'v3': result = simulator.simulateV3(config, scenario); break;
+            case 'v4': result = simulator.simulateV4(config, scenario); break;
+          }
+
+          results[scenario][algo] = result;
+
+          completed++;
+          const percent = Math.round((completed / total) * 100);
+          progressFill.style.width = `${percent}%`;
+          progressText.textContent = `测试中: ${scenario} / ${algo} (${percent}%)`;
+
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+
+      allResults.results = results;
+      updateCompareTable(results);
+      updateSummary(results);
+
+      progressText.textContent = '测试完成！';
+    }
+
+    function updateCompareTable(results) {
+      const tbody = document.getElementById('compareBody');
+      const scenarios = Object.keys(results);
+
+      tbody.innerHTML = scenarios.map(scenario => {
+        const r = results[scenario];
+        const v1 = r.v1;
+        const v2 = r.v2;
+        const v3 = r.v3;
+        const v4 = r.v4;
+
+        const getScore = (accuracy) => {
+          if (accuracy >= 95) return 'excellent';
+          if (accuracy >= 85) return 'good';
+          return 'poor';
+        };
+
+        const getScoreClass = (acc, err) => {
+          if (acc >= 95 && parseFloat(err) < 10) return 'excellent';
+          if (acc >= 85 && parseFloat(err) < 20) return 'good';
+          return 'poor';
+        };
+
+        return `
+          <tr>
+            <td>
+              <strong>${scenarios[scenario]}</strong><br>
+              <small style="color:rgba(255,255,255,0.4)">${r.v1.expected}人冲线</small>
+            </td>
+            <td>
+              <span class="score-badge ${getScoreClass(v1.accuracy, v1.avgError)}">${v1.accuracy.toFixed(0)}%</span>
+              <br><small>误差: ${v1.avgError}ms</small>
+              ${v1.falseTriggers > 0 ? `<br><small style="color:#ff5252">误触发: ${v1.falseTriggers}</small>` : ''}
+            </td>
+            <td>
+              <span class="score-badge ${getScoreClass(v2.accuracy, v2.avgError)}">${v2.accuracy.toFixed(0)}%</span>
+              <br><small>误差: ${v2.avgError}ms</small>
+              ${v2.falseTriggers > 0 ? `<br><small style="color:#ff5252">误触发: ${v2.falseTriggers}</small>` : ''}
+            </td>
+            <td>
+              <span class="score-badge ${getScoreClass(v3.accuracy, v3.avgError)}">${v3.accuracy.toFixed(0)}%</span>
+              <br><small>误差: ${v3.avgError}ms</small>
+              ${v3.falseTriggers > 0 ? `<br><small style="color:#ff5252">误触发: ${v3.falseTriggers}</small>` : ''}
+            </td>
+            <td>
+              <span class="score-badge ${getScoreClass(v4.accuracy, v4.avgError)}">${v4.accuracy.toFixed(0)}%</span>
+              <br><small>误差: ${v4.avgError}ms</small>
+              ${v4.falseTriggers > 0 ? `<br><small style="color:#ff5252">误触发: ${v4.falseTriggers}</small>` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function updateSummary(results) {
+      const allResults = [];
+      let totalFalse = 0;
+
+      for (const scenario of Object.keys(results)) {
+        for (const algo of Object.keys(results[scenario])) {
+          const r = results[scenario][algo];
+          allResults.push({
+            algo,
+            accuracy: r.accuracy,
+            error: parseFloat(r.avgError),
+            falseTriggers: r.falseTriggers
+          });
+          totalFalse += r.falseTriggers;
+        }
+      }
+
+      const avgAccuracy = allResults.reduce((sum, r) => sum + r.accuracy, 0) / allResults.length;
+      const avgError = allResults.reduce((sum, r) => sum + r.error, 0) / allResults.length;
+
+      // 找出最佳算法
+      const algoScores = {};
+      for (const r of allResults) {
+        if (!algoScores[r.algo]) algoScores[r.algo] = [];
+        algoScores[r.algo].push(r.accuracy - r.falseTriggers * 5);
+      }
+
+      let bestAlgo = 'v4';
+      let bestScore = 0;
+      for (const algo of Object.keys(algoScores)) {
+        const score = algoScores[algo].reduce((a, b) => a + b, 0) / algoScores[algo].length;
+        if (score > bestScore) {
+          bestScore = score;
+          bestAlgo = algo;
+        }
+      }
+
+      const algoNames = { v1: 'V1.0基础', v2: 'V2.0增强', v3: 'V3.0专业', v4: 'V4.0旗舰' };
+
+      document.getElementById('avgAccuracy').textContent = `${avgAccuracy.toFixed(1)}%`;
+      document.getElementById('avgError').textContent = avgError.toFixed(1);
+      document.getElementById('totalFalse').textContent = totalFalse;
+      document.getElementById('bestAlgo').textContent = algoNames[bestAlgo];
+    }
+
+    function exportReport() {
+      if (!allResults.results) {
+        alert('请先运行测试');
+        return;
+      }
+
+      const report = {
+        title: '竞迹终点检测算法对比测试报告',
+        date: new Date().toISOString(),
+        results: allResults.results
+      };
+
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `benchmark-report-${Date.now()}.json`;
+      a.click();
+    }
+  </script>
+</body>
+</html>

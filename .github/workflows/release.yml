@@ -1,0 +1,46 @@
+name: Auto Update Version
+
+on:
+  release:
+    types: [published]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  update-version:
+    name: Update Version Badge
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Get latest version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Update README version
+        run: |
+          sed -i "s/\[\([0-9]\+\.[0-9]\+\.[0-9]\+\)\]/[${VERSION}]/g" README.md
+          echo "Updated version to ${VERSION}"
+
+      - name: Create GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.html
+            js/
+            css/
+            icons/
+            manifest.json
+            sw.js
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
