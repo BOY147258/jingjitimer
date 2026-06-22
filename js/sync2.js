@@ -8,7 +8,7 @@ export class Sync {
     this._offset           = 0;   // performance.now() + offset ≈ server Date.now()
     this._ws               = null;
     this._cbs              = new Map();
-    this.connected         = false;
+    this.connected          = false;
     this.peerOnline        = false;
     this.peers             = [];
     this._autoReconnect    = true;
@@ -24,6 +24,9 @@ export class Sync {
     this._maxSamples       = 20;    // 最多保存20个样本
     this._lastSyncTime     = 0;     // 上次同步时间
     this._syncInterval     = 30000; // 每30秒校准一次
+    // 房间锁定状态
+    this._roomLocked       = false; // 房间号是否已锁定
+    this._startDeviceLocked = false; // 发令端是否已被占用
   }
 
   get finishPeerCount() {
@@ -31,6 +34,22 @@ export class Sync {
   }
   get observerCount() {
     return this.peers.filter(p => p.role === 'observer').length;
+  }
+  get hasStartDevice() {
+    return this.peers.some(p => p.role === 'start');
+  }
+  get isRoomLocked() {
+    return this._roomLocked;
+  }
+
+  // 锁定房间号（连接后自动锁定）
+  _lockRoom() {
+    this._roomLocked = true;
+  }
+
+  // 解锁房间号（断开连接时）
+  unlockRoom() {
+    this._roomLocked = false;
   }
 
   // 高精度时钟同步 - 使用TCP时间戳算法
@@ -226,6 +245,15 @@ export class Sync {
     return this._connect(true);
   }
 
+  // 检查是否可以加入（发令端房间锁定）
+  canJoinAsStart() {
+    // 如果是发令端角色，检查是否已有发令端在房间内
+    if (this.role === 'start' && this.hasStartDevice) {
+      return { allowed: false, reason: '该房间已有发令端设备，请使用其他房间码或让现有发令端退出' };
+    }
+    return { allowed: true };
+  }
+
   // Internal: create/replace the WebSocket
   _connect(firstTime) {
     return new Promise((resolve, reject) => {
@@ -248,6 +276,7 @@ export class Sync {
             this.peers            = (event.peers || []).map(r => ({ role: r, clientId: null }));
             this.peerOnline       = this.peers.length > 0;
             this._lastPongTime    = Date.now();
+            this._lockRoom(); // 连接成功后锁定房间号
             this._flushMessageQueue();
             this._startHeartbeat();
             if (firstTime) {
@@ -257,6 +286,15 @@ export class Sync {
             }
           }
 
+          // 发令端房间锁定：拒绝第二个发令端加入
+          if (event.type === 'START_DEVICE_LOCKED') {
+            this._lockRoom();
+            const error = new Error('该房间已有发令端设备，请使用其他房间码');
+            error.code = 'START_DEVICE_LOCKED';
+            settle(reject, error);
+            return;
+          }
+
           if (event.type === 'PONG') {
             this._lastPongTime = Date.now();
           }
@@ -264,10 +302,19 @@ export class Sync {
           if (event.type === 'PEER_JOINED') {
             this.peers.push({ role: event.role, clientId: event.clientId });
             this.peerOnline = true;
+            // 检查是否有新的发令端加入
+            if (event.role === 'start' && this.role === 'start') {
+              // 自己也是发令端，但有另一个发令端加入了
+              this._startDeviceLocked = true;
+            }
           }
           if (event.type === 'PEER_LEFT') {
             this.peers      = this.peers.filter(p => p.clientId !== event.clientId);
             this.peerOnline = this.peers.length > 0;
+            // 如果离开的是发令端，解锁房间
+            if (event.role === 'start') {
+              this._startDeviceLocked = false;
+            }
           }
 
           const cbs = this._cbs.get(event.type) || [];
@@ -285,6 +332,7 @@ export class Sync {
         const wasConnected = this.connected;
         this.connected  = false;
         this.peerOnline = false;
+        this.unlockRoom(); // 断开连接时解锁房间
 
         if (firstTime && !wasConnected) {
           settle(reject, new Error('Connection closed before joining'));

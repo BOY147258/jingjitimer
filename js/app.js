@@ -4,6 +4,8 @@ import { VideoRecorder    } from './recorder.js';
 import { Sync, generateRoomCode } from './sync2.js';
 import { FinishLineDetector }     from './finishline.js';
 import { ApiClient }              from './api-client.js';
+import { exportCSV, exportXLSX, exportPDF } from './export.js';
+import { initLanguage, createLangSwitcher } from './i18n.js';
 
 const MAX_LANES = 8;
 
@@ -15,6 +17,7 @@ const state = {
   distance:     100,      // race distance in metres
   trackLength:  400,      // track length in metres
   perfMode:     'balanced', // 'high' | 'balanced' | 'low' - 性能模式
+  perfMonitoringEnabled: false, // 性能监控开关（默认关闭）
   practiceMode: false,    // 练习模式标记
   currentRound: 1,
   currentGroup: 1,
@@ -33,6 +36,8 @@ const state = {
   clientId:     null,
   peerConnected:false,
   raceStartServerTime: null,
+  // 房间锁定状态
+  roomLocked:   false,    // 房间号是否已锁定（连接后锁定）
   // finish device — per-lane multi-lap tracking
   recordingStart: null,
   crossings:    [],
@@ -50,6 +55,8 @@ const state = {
   obsResults:   [],   // crossings this group
   obsHistory:   [],   // array of {round,group,results[]}
   obsRaceInfo:  {},   // latest RACE_CONFIG payload
+  // 导出相关
+  lastRace:     null, // 最后一场比赛数据，用于导出
 };
 
 const timer    = new PrecisionTimer();
@@ -278,6 +285,9 @@ const DOM = {
   replayVideo:    $('replay-video'),
   btnDlVideo:     $('btn-dl-video'),
   btnExportCsv:   $('btn-export-csv'),
+  btnExportXlsx:  $('btn-export-xlsx'),
+  btnExportPdf:   $('btn-export-pdf'),
+  btnBatchExport: $('btn-batch-export'),
   btnClearRes:    $('btn-clear-results'),
   historyList:    $('history-list'),
   trendCanvas:    $('trend-canvas'),
@@ -498,6 +508,7 @@ function selectRole(role) {
     DOM.roomPanel.classList.add('hidden');
     DOM.btnRoleConfirm.classList.remove('hidden');
     DOM.btnRoleSolo.classList.add('selected');
+    _hideRoomLockedIndicator();
   } else if (role === 'start') {
     DOM.roomPanel.classList.remove('hidden');
     DOM.roomCodeSetWrap.classList.remove('hidden');
@@ -506,19 +517,53 @@ function selectRole(role) {
     // Pre-fill with a suggestion; user can clear and type anything
     if (!DOM.roomCodeSet.value) DOM.roomCodeSet.value = generateRoomCode();
     DOM.btnRoleStart.classList.add('selected');
+    _updateRoomLockedIndicator();
   } else if (role === 'finish') {
     DOM.roomPanel.classList.remove('hidden');
     DOM.roomCodeSetWrap.classList.add('hidden');
     DOM.roomCodeInputW.classList.remove('hidden');
     DOM.btnRoleConfirm.classList.add('hidden');
     DOM.btnRoleFinish.classList.add('selected');
+    _hideRoomLockedIndicator();
   } else if (role === 'observer') {
     DOM.roomPanel.classList.remove('hidden');
     DOM.roomCodeSetWrap.classList.add('hidden');
     DOM.roomCodeInputW.classList.remove('hidden');
     DOM.btnRoleConfirm.classList.add('hidden');
     $('btn-role-observer')?.classList.add('selected');
+    _hideRoomLockedIndicator();
   }
+}
+
+// 显示/更新房间锁定状态指示器
+function _updateRoomLockedIndicator() {
+  const lockIndicator = $('room-lock-indicator');
+  if (!lockIndicator) return;
+
+  if (state.roomLocked) {
+    lockIndicator.classList.remove('hidden');
+    lockIndicator.innerHTML = '<span class="lock-icon">&#128274;</span> 房间已锁定';
+    // 锁定房间号输入
+    DOM.roomCodeSet.disabled = true;
+    DOM.roomCodeSet.readOnly = true;
+    DOM.roomCodeSet.style.opacity = '0.7';
+    DOM.roomCodeSet.style.cursor = 'not-allowed';
+    DOM.btnRoomSuggest?.classList.add('hidden');
+  } else {
+    lockIndicator.classList.add('hidden');
+    // 解锁房间号输入
+    DOM.roomCodeSet.disabled = false;
+    DOM.roomCodeSet.readOnly = false;
+    DOM.roomCodeSet.style.opacity = '';
+    DOM.roomCodeSet.style.cursor = '';
+    DOM.btnRoomSuggest?.classList.remove('hidden');
+  }
+}
+
+// 隐藏房间锁定状态指示器
+function _hideRoomLockedIndicator() {
+  const lockIndicator = $('room-lock-indicator');
+  if (lockIndicator) lockIndicator.classList.add('hidden');
 }
 
 async function connectToRoom() {
@@ -547,6 +592,7 @@ async function connectToRoom() {
     await sync.join(state.roomCode, selectedRole, serverHost);
     state.clientId      = sync.clientId;
     state.peerConnected = sync.peerOnline;
+    state.roomLocked    = true; // 连接成功后锁定房间号
     updateLatencyBadge();
 
     const fc = sync.finishPeerCount;
@@ -554,6 +600,9 @@ async function connectToRoom() {
       ? `✅ 已连接，终点端 ${fc} 个在线`
       : `✅ 已加入房间 ${state.roomCode}（等待终点端）`;
     DOM.roomStatus.className = 'room-status connected';
+
+    // 更新房间锁定状态UI
+    _updateRoomLockedIndicator();
 
     // Register sync events
     registerSyncEvents();
@@ -563,13 +612,28 @@ async function connectToRoom() {
     showToast(`已加入房间 ${state.roomCode}`, 'success');
   } catch (e) {
     const isWsErr = e.message?.toLowerCase().includes('websocket') || e.message?.includes('failed');
-    DOM.roomStatus.innerHTML = isWsErr
-      ? '⚠️ 服务器未连接（离线模式）<br><span style="font-size:11px;color:#aaa">多设备同步暂不可用，可继续使用本机计时。</span>'
-      : '⚠️ 连接失败：' + e.message;
-    DOM.roomStatus.className = 'room-status warn';
+    const isStartLocked = e.code === 'START_DEVICE_LOCKED' || e.message?.includes('已有发令端');
+
+    if (isStartLocked) {
+      DOM.roomStatus.innerHTML = '❌ 该房间已有发令端设备<br><span style="font-size:11px;color:#aaa">请使用其他房间码，或让现有发令端退出后再试</span>';
+      DOM.roomStatus.className = 'room-status error';
+      showToast('该房间已有发令端设备', 'error');
+    } else if (isWsErr) {
+      DOM.roomStatus.innerHTML = '⚠️ 服务器未连接（离线模式）<br><span style="font-size:11px;color:#aaa">多设备同步暂不可用，可继续使用本机计时。</span>';
+      DOM.roomStatus.className = 'room-status warn';
+      // 离线模式下发令端仍可继续
+      if (selectedRole === 'start') {
+        state.roomLocked = true;
+        _updateRoomLockedIndicator();
+        DOM.btnRoleConfirm.classList.remove('hidden');
+      }
+    } else {
+      DOM.roomStatus.innerHTML = '⚠️ 连接失败：' + e.message;
+      DOM.roomStatus.className = 'room-status warn';
+    }
     DOM.btnConnect.disabled  = false;
     // Still allow proceeding — start role can work as standalone timer
-    if (selectedRole === 'start') {
+    if (selectedRole === 'start' && !isStartLocked) {
       DOM.btnRoleConfirm.classList.remove('hidden');
     }
   }
@@ -610,6 +674,20 @@ function registerSyncEvents() {
     }
     updateConnStatus(sync.peerOnline);
     updateFinishBadge();
+  });
+
+  // 监听发令端锁定状态变化
+  sync.on('START_DEVICE_LOCKED', () => {
+    state.roomLocked = true;
+    _updateRoomLockedIndicator();
+    showToast('发令端已锁定房间', 'warn');
+  });
+
+  // 监听发令端解锁（发令端离开时）
+  sync.on('START_DEVICE_UNLOCKED', () => {
+    state.roomLocked = false;
+    _updateRoomLockedIndicator();
+    showToast('发令端已离开，房间解锁', 'success');
   });
   sync.on('DISCONNECTED', () => {
     showToast('⚠️ 连接断开，正在重连...', 'warn');
@@ -1597,11 +1675,12 @@ async function endRace() {
   }
 
   const race = saveRace(blob);
+  state.lastRace = race; // 保存用于导出
   autoSaveToBackend(race);
 
   // ── 保存成绩到 localStorage & session history ──────────
   saveGroupToHistory(race);
-  showToast('✅ 成绩已保存', 'success');
+  showToast('成绩已保存', 'success');
 
   // Show inline race-end actions in the race tab
   showRaceEndActions(race, blob);
@@ -1747,7 +1826,15 @@ function goHome() {
   // Reset state
   state.role = 'solo'; state.raceStarted = false; state.raceFinished = false;
   state.lanes = []; state.camGranted = false; state.micGranted = false;
+  state.roomLocked = false; // 重置房间锁定状态
   selectedRole = null;
+
+  // 解锁房间号输入
+  DOM.roomCodeSet.disabled = false;
+  DOM.roomCodeSet.readOnly = false;
+  DOM.roomCodeSet.style.opacity = '';
+  DOM.roomCodeSet.style.cursor = '';
+  _hideRoomLockedIndicator();
 
   // Hide all sections, show role overlay
   document.getElementById('tab-bar-start')?.classList.add('hidden');
@@ -2293,6 +2380,943 @@ function getHistory()  { try { return JSON.parse(localStorage.getItem('race-hist
 function loadHistory() { renderHistory(getHistory()); }
 
 // ── 保存成绩到管理后台 localStorage & session history ───
+// ═══════════════════════════════════════════════════════════════════════════
+// 增强数据导出功能
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 运动员最佳成绩记录 ─────────────────────────────────────
+const ATHLETE_BEST_KEY = 'jingjitimer-athlete-bests';
+
+function getAthleteBests() {
+  try { return JSON.parse(localStorage.getItem(ATHLETE_BEST_KEY) || '{}'); } catch { return {}; }
+}
+
+function saveAthleteBest(athleteName, timeMs, distance, date) {
+  const bests = getAthleteBests();
+  const key = `${athleteName}_${distance}m`;
+  if (!bests[key] || timeMs < bests[key].time) {
+    bests[key] = { name: athleteName, time: timeMs, distance, date };
+    try { localStorage.setItem(ATHLETE_BEST_KEY, JSON.stringify(bests)); } catch {}
+  }
+  return bests[key];
+}
+
+function getAthleteBest(athleteName, distance) {
+  const bests = getAthleteBests();
+  return bests[`${athleteName}_${distance}m`] || null;
+}
+
+// 保存比赛时更新最佳成绩
+function updateBestsFromRace(race) {
+  if (!race?.lanes) return;
+  race.lanes.forEach(lane => {
+    if (lane.time != null) {
+      saveAthleteBest(lane.name, lane.time, race.distance || state.distance, race.date);
+    }
+  });
+}
+
+// ── 天气信息获取 ───────────────────────────────────────────
+async function getWeatherInfo() {
+  // 尝试获取用户位置并获取天气
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ temp: null, condition: '未知', city: '' });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        try {
+          // 使用免费的 Open-Meteo API (无需 API key)
+          const resp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`);
+          const data = await resp.json();
+          if (data.current) {
+            const temp = data.current.temperature_2m;
+            const code = data.current.weather_code;
+            const condition = weatherCodeToText(code);
+            resolve({ temp, condition, city: '当前位置' });
+          } else {
+            resolve({ temp: null, condition: '未知', city: '' });
+          }
+        } catch {
+          resolve({ temp: null, condition: '未知', city: '' });
+        }
+      },
+      () => resolve({ temp: null, condition: '未知', city: '' }),
+      { timeout: 3000 }
+    );
+  });
+}
+
+function weatherCodeToText(code) {
+  const codes = {
+    0: '晴', 1: '晴间多云', 2: '多云', 3: '阴',
+    45: '雾', 48: '霜雾',
+    51: '小毛毛雨', 53: '中毛毛雨', 55: '大毛毛雨',
+    61: '小雨', 63: '中雨', 65: '大雨',
+    71: '小雪', 73: '中雪', 75: '大雪',
+    80: '小阵雨', 81: '中阵雨', 82: '大阵雨',
+    95: '雷暴', 96: '雷暴伴冰雹',
+  };
+  return codes[code] || '未知';
+}
+
+// ── 规范化文件名生成 ───────────────────────────────────────
+function generateExportFilename(parts) {
+  const date = new Date();
+  const dateStr = `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}`;
+  const timeStr = `${String(date.getHours()).padStart(2,'0')}${String(date.getMinutes()).padStart(2,'0')}`;
+  const suffix = parts.filter(Boolean).join('_');
+  return suffix ? `${dateStr}_${timeStr}_${suffix}` : `${dateStr}_${timeStr}`;
+}
+
+// ── 真正的 CSV 导出 ───────────────────────────────────────
+function exportToCSV(race, options = {}) {
+  const {
+    includeBest = true,
+    includeLapTimes = true,
+    includeMetadata = true,
+    filename = null
+  } = options;
+
+  const orgName = DOM.orgName?.value?.trim() || race.orgName || '';
+  const distance = race.distance || state.distance || 0;
+  const dateStr = race.date || new Date().toLocaleString('zh-CN');
+  const round = race.round || 1;
+  const group = race.group || 1;
+  const trackLength = race.trackLength || state.trackLength || 400;
+  const lapCount = race.lapCount || state.lapCount || 1;
+
+  const lines = [];
+
+  // BOM for Excel UTF-8 compatibility
+  const BOM = '﻿';
+
+  // 元数据部分
+  if (includeMetadata) {
+    lines.push(BOM + '===== 比赛信息 =====');
+    lines.push(`学校/组织,${escapeCSV(orgName)}`);
+    lines.push(`比赛名称,${escapeCSV(race.name || '田径比赛')}`);
+    lines.push(`日期,${escapeCSV(dateStr)}`);
+    lines.push(`距离,${distance}m`);
+    lines.push(`跑道长度,${trackLength}m`);
+    lines.push(`圈数,${lapCount}`);
+    lines.push(`组别,第${round}轮 第${group}组`);
+    lines.push(`导出时间,${new Date().toLocaleString('zh-CN')}`);
+    lines.push('');
+    lines.push('===== 比赛成绩 =====');
+  }
+
+  // CSV 表头
+  const headers = ['名次', '道次', '姓名'];
+  if (includeLapTimes && lapCount > 1) {
+    for (let i = 1; i <= lapCount; i++) {
+      headers.push(`第${i}圈`);
+    }
+  }
+  headers.push('总成绩', '备注');
+  if (includeBest) headers.push('个人最佳', '是否刷新最佳');
+
+  lines.push(headers.join(','));
+
+  // 成绩数据
+  const sorted = race.lanes.filter(l => l.time != null).sort((a, b) => a.time - b.time);
+  const dnf = race.lanes.filter(l => l.time == null);
+
+  sorted.forEach((lane, idx) => {
+    const rank = idx + 1;
+    const laneIdx = race.lanes.indexOf(lane);
+    const lapTimes = lane.lapTimes || [];
+    const best = includeBest ? getAthleteBest(lane.name, distance) : null;
+    const isNewBest = best && lane.time <= best.time;
+
+    const row = [
+      rank,
+      laneIdx + 1,
+      escapeCSV(lane.name),
+    ];
+
+    if (includeLapTimes && lapCount > 1) {
+      for (let i = 0; i < lapCount; i++) {
+        row.push(lapTimes[i] != null ? PrecisionTimer.formatFull(lapTimes[i]) : '');
+      }
+    }
+
+    row.push(PrecisionTimer.formatFull(lane.time));
+    row.push('');
+
+    if (includeBest) {
+      row.push(best ? PrecisionTimer.formatFull(best.time) : '');
+      row.push(isNewBest ? 'NEW!' : '');
+    }
+
+    lines.push(row.join(','));
+  });
+
+  // DNF
+  dnf.forEach(lane => {
+    const laneIdx = race.lanes.indexOf(lane);
+    const row = [
+      'DNF',
+      laneIdx + 1,
+      escapeCSV(lane.name),
+    ];
+
+    if (includeLapTimes && lapCount > 1) {
+      for (let i = 0; i < lapCount; i++) {
+        row.push('');
+      }
+    }
+
+    row.push('');
+    row.push(lane.dnf ? 'DNF-弃赛' : 'DNS-未参赛');
+
+    if (includeBest) {
+      row.push('');
+      row.push('');
+    }
+
+    lines.push(row.join(','));
+  });
+
+  // 个人最佳记录
+  if (includeBest) {
+    lines.push('');
+    lines.push('===== 个人最佳记录 =====');
+    lines.push('姓名,距离,最佳成绩,创造日期');
+    sorted.forEach(lane => {
+      const best = getAthleteBest(lane.name, distance);
+      if (best) {
+        lines.push([escapeCSV(lane.name), `${distance}m`, PrecisionTimer.formatFull(best.time), best.date].join(','));
+      }
+    });
+  }
+
+  const csvContent = lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  const fname = filename || generateExportFilename([
+    orgName,
+    `${distance}m`,
+    `第${round}轮第${group}组`
+  ]);
+
+  a.href = url;
+  a.download = `${fname}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`CSV 已导出: ${fname}.csv`, 'success');
+}
+
+function escapeCSV(str) {
+  if (str == null) return '';
+  const s = String(str);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+// ── PDF 导出 ───────────────────────────────────────────────
+async function exportToPDF(race, options = {}) {
+  const {
+    includeWeather = true,
+    includeBest = true,
+    includeLapTimes = true,
+    filename = null
+  } = options;
+
+  const orgName = DOM.orgName?.value?.trim() || race.orgName || '';
+  const distance = race.distance || state.distance || 0;
+  const dateStr = race.date || new Date().toLocaleString('zh-CN');
+  const round = race.round || 1;
+  const group = race.group || 1;
+  const trackLength = race.trackLength || state.trackLength || 400;
+  const lapCount = race.lapCount || state.lapCount || 1;
+
+  let weather = null;
+  if (includeWeather) {
+    weather = await getWeatherInfo();
+  }
+
+  // 使用简单的内联 PDF 生成（不依赖外部库）
+  const pdfContent = generatePDFContent(race, {
+    orgName, distance, dateStr, round, group, trackLength, lapCount, weather, includeBest, includeLapTimes
+  });
+
+  const blob = new Blob([pdfContent], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  const fname = filename || generateExportFilename([
+    orgName,
+    `${distance}m`,
+    `第${round}轮第${group}组`
+  ]);
+
+  a.href = url;
+  a.download = `${fname}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`PDF 已导出: ${fname}.pdf`, 'success');
+}
+
+function generatePDFContent(race, options) {
+  const { orgName, distance, dateStr, round, group, trackLength, lapCount, weather, includeBest, includeLapTimes } = options;
+
+  const sorted = race.lanes.filter(l => l.time != null).sort((a, b) => a.time - b.time);
+  const dnf = race.lanes.filter(l => l.time == null);
+  const medals = ['🥇', '🥈', '🥉'];
+
+  // 构建 PDF 内容（简化版文本 PDF）
+  let content = '';
+  content += '%PDF-1.4\n';
+  content += '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n';
+  content += '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n';
+
+  // 标题和元数据
+  let textContent = '';
+  textContent += 'BT\n';
+  textContent += '/F1 24 Tf\n';
+  textContent += '100 750 Td\n';
+  textContent += '( ' + (orgName || '田径比赛成绩单') + ' ) Tj\n';
+
+  textContent += '/F2 12 Tf\n';
+  textContent += '100 720 Td\n';
+  textContent += '( Date: ' + dateStr + ' ) Tj\n';
+
+  let yPos = 690;
+  textContent += '100 ' + yPos + ' Td\n';
+  textContent += '( Distance: ' + distance + 'm | Track: ' + trackLength + 'm | Round ' + round + ' Group ' + group + ' ) Tj\n';
+
+  if (weather) {
+    yPos -= 20;
+    textContent += '100 ' + yPos + ' Td\n';
+    const weatherStr = weather.temp != null ? `Weather: ${weather.condition} ${weather.temp}C` : `Weather: ${weather.condition}`;
+    textContent += '( ' + weatherStr + ' ) Tj\n';
+  }
+
+  yPos -= 40;
+  textContent += '100 ' + yPos + ' Td\n';
+  textContent += '( Ranking   Lane   Name              Time ) Tj\n';
+
+  yPos -= 20;
+  sorted.forEach((lane, idx) => {
+    const laneIdx = race.lanes.indexOf(lane);
+    const medal = medals[idx] || `#${idx + 1}`;
+    const line = ` ${medal}       ${String(laneIdx + 1).padStart(4)}   ${lane.name.padEnd(15).substring(0, 15)}   ${PrecisionTimer.formatFull(lane.time)}`;
+
+    if (yPos < 100) {
+      content += 'ET\n';
+      content += '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj\n';
+      content += '4 0 obj << /Length ' + textContent.length + ' >> stream\n';
+      content += textContent + '\nendstream\nendobj\n';
+      content += 'xref\n0 5\n';
+      content += 'trailer << /Size 5 /Root 1 0 R >>\n';
+      content += 'startxref\n';
+      content += (content.length + textContent.length + 100).toString() + '\n';
+      content += '%%EOF';
+      return;
+    }
+
+    textContent += '100 ' + yPos + ' Td\n';
+    textContent += '( ' + line + ' ) Tj\n';
+
+    // 圈速
+    if (includeLapTimes && lapCount > 1 && lane.lapTimes) {
+      yPos -= 15;
+      const lapStr = lane.lapTimes.map((t, i) => `L${i+1}:${PrecisionTimer.formatFull(t)}`).join(' | ');
+      textContent += '120 ' + yPos + ' Td\n';
+      textContent += '( ' + lapStr + ' ) Tj\n';
+    }
+
+    yPos -= 20;
+  });
+
+  // DNF
+  if (dnf.length > 0) {
+    yPos -= 20;
+    textContent += '100 ' + yPos + ' Td\n';
+    textContent += '( DNF: ) Tj\n';
+    yPos -= 15;
+    dnf.forEach(lane => {
+      const laneIdx = race.lanes.indexOf(lane);
+      textContent += '120 ' + yPos + ' Td\n';
+      textContent += `( Lane ${laneIdx + 1} - ${lane.name} ) Tj\n`;
+      yPos -= 15;
+    });
+  }
+
+  // Footer
+  yPos -= 30;
+  textContent += '100 ' + yPos + ' Td\n';
+  textContent += '( Generated by JingJi Timer | ' + new Date().toLocaleString('zh-CN') + ' ) Tj\n';
+
+  textContent += 'ET\n';
+
+  content += '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj\n';
+  content += '4 0 obj << /Length ' + textContent.length + ' >> stream\n';
+  content += textContent + '\nendstream\nendobj\n';
+  content += 'xref\n0 5\n';
+  content += 'trailer << /Size 5 /Root 1 0 R >>\n';
+  content += 'startxref\n';
+  content += (content.length + textContent.length + 100).toString() + '\n';
+  content += '%%EOF';
+
+  return content;
+}
+
+// ── 批量导出历史成绩 ───────────────────────────────────────
+function exportBatchHistory(options = {}) {
+  const {
+    format = 'csv',
+    dateFrom = null,
+    dateTo = null,
+    distance = null,
+    orgName = DOM.orgName?.value?.trim() || ''
+  } = options;
+
+  const history = getHistory();
+
+  if (history.length === 0) {
+    showToast('暂无历史成绩可导出', 'warn');
+    return;
+  }
+
+  // 过滤数据
+  let filtered = history;
+  if (dateFrom) {
+    filtered = filtered.filter(r => new Date(r.date) >= new Date(dateFrom));
+  }
+  if (dateTo) {
+    filtered = filtered.filter(r => new Date(r.date) <= new Date(dateTo));
+  }
+  if (distance) {
+    filtered = filtered.filter(r => r.distance === distance || r.distance === state.distance);
+  }
+
+  if (filtered.length === 0) {
+    showToast('没有符合筛选条件的成绩', 'warn');
+    return;
+  }
+
+  if (format === 'csv') {
+    exportBatchToCSV(filtered, { orgName, distance });
+  } else if (format === 'pdf') {
+    exportBatchToPDF(filtered, { orgName, distance });
+  } else if (format === 'html') {
+    exportBatchToHTML(filtered, { orgName, distance });
+  }
+
+  showToast(`已导出 ${filtered.length} 组成绩 (${format.toUpperCase()})`, 'success');
+}
+
+function exportBatchToCSV(races, options = {
+  orgName: '',
+  distance: null
+}) {
+  const lines = [];
+  lines.push('﻿' + '===== 批量成绩导出 =====');
+  lines.push(`学校/组织,${escapeCSV(options.orgName)}`);
+  lines.push(`导出时间,${new Date().toLocaleString('zh-CN')}`);
+  lines.push(`成绩组数,${races.length}`);
+  lines.push('');
+
+  // 表头
+  lines.push('日期,比赛名称,轮次,组别,距离,道次,姓名,名次,成绩,备注');
+
+  races.forEach(race => {
+    const sorted = race.lanes.filter(l => l.time != null).sort((a, b) => a.time - b.time);
+    const dnf = race.lanes.filter(l => l.time == null);
+
+    sorted.forEach((lane, idx) => {
+      const laneIdx = race.lanes.indexOf(lane);
+      lines.push([
+        escapeCSV(race.date || ''),
+        escapeCSV(race.name || ''),
+        race.round || 1,
+        race.group || 1,
+        race.distance || state.distance || '',
+        laneIdx + 1,
+        escapeCSV(lane.name),
+        idx + 1,
+        PrecisionTimer.formatFull(lane.time),
+        ''
+      ].join(','));
+    });
+
+    dnf.forEach(lane => {
+      const laneIdx = race.lanes.indexOf(lane);
+      lines.push([
+        escapeCSV(race.date || ''),
+        escapeCSV(race.name || ''),
+        race.round || 1,
+        race.group || 1,
+        race.distance || state.distance || '',
+        laneIdx + 1,
+        escapeCSV(lane.name),
+        'DNF',
+        '',
+        lane.dnf ? '弃赛' : 'DNS'
+      ].join(','));
+    });
+  });
+
+  const csvContent = lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.href = url;
+  a.download = `${generateExportFilename([options.orgName, '批量导出', `${races.length}组`])}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportBatchToPDF(races, options = {}) {
+  // 简化的批量 PDF 导出
+  showToast('批量 PDF 导出功能开发中，请使用 CSV 格式', 'info');
+}
+
+function exportBatchToHTML(races, options = {}) {
+  const { orgName = '' } = options;
+  const medals = ['🥇', '🥈', '🥉'];
+
+  const rows = races.map(race => {
+    const sorted = race.lanes.filter(l => l.time != null).sort((a, b) => a.time - b.time);
+    const raceRows = sorted.map((lane, idx) => {
+      const laneIdx = race.lanes.indexOf(lane);
+      return `<tr>
+        <td>${rounds || '-'}</td>
+        <td>${medals[idx] || idx + 1}</td>
+        <td>${laneIdx + 1}</td>
+        <td>${lane.name}</td>
+        <td>${PrecisionTimer.formatFull(lane.time)}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="batch-race">
+      <div class="batch-race-header">${race.date} - ${race.name || '田径比赛'} (${race.distance || state.distance}m)</div>
+      <table><thead><tr><th>R</th><th>Rank</th><th>Lane</th><th>Name</th><th>Time</th></tr></thead><tbody>${raceRows}</tbody></table>
+    </div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;margin:20px;color:#222}
+  h1{color:#ff6200}
+  .batch-race{margin-bottom:30px;border:1px solid #ddd;padding:15px;border-radius:8px}
+  .batch-race-header{font-weight:bold;font-size:16px;margin-bottom:10px;color:#333}
+  table{width:100%;border-collapse:collapse}
+  th{background:#ff6200;color:#fff;padding:8px}
+  td{padding:6px 8px;border-bottom:1px solid #eee;text-align:center}
+  .footer{font-size:11px;color:#999;margin-top:20px}
+</style></head><body>
+<h1>${orgName || '田径比赛'} - 批量成绩单</h1>
+<div class="meta">导出时间: ${new Date().toLocaleString('zh-CN')}</div>
+${rows}
+<div class="footer">由 竞迹 JingJi 生成</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${generateExportFilename([orgName, '批量导出', `${races.length}组`])}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── 带完整元数据的单组导出菜单 ──────────────────────────────
+function showExportMenu(race, blob) {
+  // 创建导出菜单
+  const menu = document.createElement('div');
+  menu.id = 'export-menu';
+  menu.style.cssText = `
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: #1a1a2e; border-radius: 16px; padding: 24px;
+    min-width: 300px; z-index: 10000; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  `;
+
+  menu.innerHTML = `
+    <div style="font-size: 18px; font-weight: bold; margin-bottom: 16px; color: #fff">
+      导出成绩单
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <button onclick="exportToCSV(state.lastRace || getHistory()[0], {includeBest: true, includeLapTimes: true})" style="btn-export">
+        CSV 格式 (推荐)
+      </button>
+      <button onclick="exportToPDF(state.lastRace || getHistory()[0], {includeWeather: true, includeBest: true})" style="btn-export">
+        PDF 格式
+      </button>
+      <button onclick="exportResultsEnhanced(state.lastRace || getHistory()[0])" style="btn-export">
+        Excel 格式
+      </button>
+      <button onclick="exportBatchHistory({format: 'csv'})" style="btn-export">
+        批量导出 CSV
+      </button>
+      <button onclick="exportBatchHistory({format: 'html'})" style="btn-export">
+        批量导出 Excel
+      </button>
+    </div>
+    <button onclick="this.closest('#export-menu').remove()" style="margin-top: 16px; width: 100%; padding: 10px; background: #333; color: #fff; border: none; border-radius: 8px; cursor: pointer;">
+      关闭
+    </button>
+  `;
+
+  document.body.appendChild(menu);
+
+  // 添加样式
+  const style = document.createElement('style');
+  style.textContent = `
+    .btn-export {
+      padding: 12px 16px;
+      background: #ff6200;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      text-align: left;
+    }
+    .btn-export:hover { background: #e55a00; }
+  `;
+  document.head.appendChild(style);
+}
+
+// ── 批量导出菜单 ──────────────────────────────────────────
+function showBatchExportMenu() {
+  const history = getHistory();
+  if (history.length === 0) {
+    showToast('暂无历史成绩可导出', 'warn');
+    return;
+  }
+
+  // 获取可用的筛选条件
+  const distances = [...new Set(history.map(r => r.distance || state.distance))].filter(Boolean);
+  const orgName = DOM.orgName?.value?.trim() || '';
+
+  // 创建筛选菜单
+  const menu = document.createElement('div');
+  menu.id = 'batch-export-menu';
+  menu.style.cssText = `
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: #1a1a2e; border-radius: 16px; padding: 24px;
+    min-width: 320px; z-index: 10000; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  `;
+
+  const distanceOptions = distances.length > 0
+    ? distances.map(d => `<option value="${d}">${d}m</option>`).join('')
+    : `<option value="">全部距离</option>`;
+
+  const dateOptions = history.length > 0
+    ? `<option value="">全部日期</option>
+       <option value="7">最近7天</option>
+       <option value="30">最近30天</option>
+       <option value="all">所有历史</option>`
+    : '';
+
+  menu.innerHTML = `
+    <div style="font-size: 18px; font-weight: bold; margin-bottom: 16px; color: #fff">
+      批量导出成绩
+    </div>
+    <div style="color: #888; font-size: 13px; margin-bottom: 16px;">
+      共 ${history.length} 组成绩
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <label style="color: #aaa; font-size: 12px;">距离筛选</label>
+        <select id="batch-dist" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #2a2a3e; color: #fff;">
+          <option value="">全部距离</option>
+          ${distanceOptions}
+        </select>
+      </div>
+      <div>
+        <label style="color: #aaa; font-size: 12px;">日期范围</label>
+        <select id="batch-date" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #2a2a3e; color: #fff;">
+          ${dateOptions}
+        </select>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
+      <button onclick="exportBatchHistory({format: 'csv', distance: document.getElementById('batch-dist').value || null})" class="btn-export">
+        导出 CSV
+      </button>
+      <button onclick="exportBatchHistory({format: 'html', distance: document.getElementById('batch-dist').value || null})" class="btn-export">
+        导出 Excel
+      </button>
+    </div>
+    <button onclick="this.closest('#batch-export-menu').remove()" style="margin-top: 16px; width: 100%; padding: 10px; background: #333; color: #fff; border: none; border-radius: 8px; cursor: pointer;">
+      关闭
+    </button>
+  `;
+
+  document.body.appendChild(menu);
+}
+
+// ── 增强的 Excel 导出 ─────────────────────────────────────
+function exportResultsEnhanced(race) {
+  const {
+    includeBest = true,
+    includeLapTimes = true,
+    includeMetadata = true,
+    includeBestsTable = true
+  } = {};
+
+  const orgName = DOM.orgName?.value?.trim() || race.orgName || '';
+  const distance = race.distance || state.distance || 0;
+  const dateStr = race.date || new Date().toLocaleString('zh-CN');
+  const round = race.round || 1;
+  const group = race.group || 1;
+  const trackLength = race.trackLength || state.trackLength || 400;
+  const lapCount = race.lapCount || state.lapCount || 1;
+
+  const sorted = race.lanes.filter(l => l.time != null).sort((a, b) => a.time - b.time);
+  const dnf = race.lanes.filter(l => l.time == null);
+  const medals = ['🥇', '🥈', '🥉'];
+  const maxLaps = Math.max(0, ...race.lanes.map(l => l.lapTimes?.length || 0));
+
+  // 表头
+  const thSplits = maxLaps > 1 ? Array.from({ length: maxLaps }, (_, i) => `<th>第${i + 1}圈</th>`).join('') : '';
+  const bestCol = includeBest ? '<th>个人最佳</th><th>刷新</th>' : '';
+
+  const makeRow = (l, rank) => {
+    const finished = l.time != null;
+    const status = l.dnf ? 'DNF' : (finished ? '' : 'DNS');
+    const lapTimes = l.lapTimes || [];
+    const splits = maxLaps > 1
+      ? Array.from({ length: maxLaps }, (_, i) =>
+          `<td>${lapTimes[i] != null ? PrecisionTimer.formatFull(lapTimes[i]) : ''}</td>`
+        ).join('')
+      : '';
+    const best = includeBest ? getAthleteBest(l.name, distance) : null;
+    const isNewBest = best && finished && l.time <= best.time;
+    const bestCell = includeBest
+      ? `<td>${best ? PrecisionTimer.formatFull(best.time) : '-'}</td><td>${isNewBest ? 'NEW!' : ''}</td>`
+      : '';
+    const cls = rank === 1 ? ' class="gold-row"' : (finished ? '' : ' class="dnf-row"');
+    return `<tr${cls}>
+      <td>${finished ? (medals[rank - 1] || rank) : status}</td>
+      <td>${l.id + 1}</td>
+      <td>${l.name}</td>
+      <td class="time-cell">${finished ? PrecisionTimer.formatFull(l.time) : status}</td>
+      ${splits}
+      ${bestCell}
+    </tr>`;
+  };
+
+  const rows = [
+    ...sorted.map((l, i) => makeRow(l, i + 1)),
+    ...dnf.map(l => makeRow(l, null)),
+  ].join('');
+
+  const lapStr = lapCount > 1 ? ` · ${lapCount}圈` : '';
+  const distStr = distance ? `${distance}m` : '';
+  const metaRows = includeMetadata ? `
+    <div class="meta-row"><b>学校/组织：</b>${orgName || '-'}</div>
+    <div class="meta-row"><b>比赛日期：</b>${dateStr}</div>
+    <div class="meta-row"><b>比赛项目：</b>${distStr}${lapStr}</div>
+    <div class="meta-row"><b>跑道长度：</b>${trackLength}m</div>
+    <div class="meta-row"><b>组别：</b>第${round}轮 第${group}组</div>
+  ` : '';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;margin:24px;color:#222}
+  .header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .brand{font-size:24px;font-weight:900;color:#ff6200;letter-spacing:2px}
+  .subtitle{font-size:13px;color:#888}
+  .meta{font-size:13px;color:#555;line-height:1.8;margin-bottom:12px;padding:10px;background:#f8f8f8;border-radius:6px}
+  .meta-row{margin:2px 0}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-top:12px}
+  th{background:#ff6200;color:#fff;padding:10px 12px;text-align:center;font-weight:700}
+  td{padding:8px 12px;text-align:center;border-bottom:1px solid #eee}
+  tr:nth-child(even) td{background:#fafafa}
+  .gold-row td{background:#fffde7;font-weight:700}
+  .dnf-row td{color:#999;background:#f5f5f5}
+  .time-cell{font-family:monospace;font-size:15px;font-weight:700;color:#ff6200}
+  .gold-row .time-cell{color:#e65100}
+  .footer{font-size:11px;color:#bbb;margin-top:20px;text-align:center}
+  .weather{font-size:12px;color:#666;margin-top:4px}
+</style></head><body>
+<div class="header">
+  <span class="brand">竞迹</span>
+  <span class="subtitle">精准计时成绩单</span>
+</div>
+<div class="meta">${metaRows}</div>
+<table>
+  <thead><tr><th>名次</th><th>道次</th><th>姓名</th><th>成绩</th>${thSplits}${bestCol}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">由 竞迹 JingJi 生成 · ${new Date().toLocaleString('zh-CN')}</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fname = generateExportFilename([orgName, distStr, `第${round}轮第${group}组`]);
+  a.href = url;
+  a.download = `${fname}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`Excel 已导出: ${fname}.xls`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 原有的导出函数（保持兼容）
+// ═══════════════════════════════════════════════════════════════════════════
+
+function exportResults() {
+  const history = getHistory();
+  const race = history[0];
+  if (!race) { showToast('暂无成绩可导出', 'warn'); return; }
+
+  const orgName = DOM.orgName?.value?.trim() || '';
+  const raceName = DOM.raceName?.value?.trim() || race.name || '田径比赛';
+  const date = race.date || new Date().toLocaleDateString('zh-CN');
+  const dist = state.distance ? `${state.distance}m` : '';
+
+  const sorted = race.lanes.filter(l => l.time != null).sort((a,b) => a.time - b.time);
+  const dnf = race.lanes.filter(l => l.time == null);
+  const maxLaps = Math.max(0, ...race.lanes.map(l => l.lapTimes?.length || 0));
+  const lapCols = maxLaps > 1 ? Array.from({length: maxLaps}, (_, i) => i) : [];
+
+  const thSplits = lapCols.map(i => `<th>第${i+1}圈</th>`).join('');
+  const makeRow = (l, rank) => {
+    const finished = l.time != null;
+    const status = l.dnf ? 'DNF' : 'DNS';
+    const splits = lapCols.map(i =>
+      `<td>${l.lapTimes?.[i] != null ? PrecisionTimer.formatFull(l.lapTimes[i]) : ''}</td>`
+    ).join('');
+    const cls = rank === 1 ? ' class="gold-row"' : (finished ? '' : ' class="dnf-row"');
+    return `<tr${cls}>
+      <td>${finished ? rank : status}</td>
+      <td>${l.id + 1}</td>
+      <td>${l.name}</td>
+      <td class="time-cell">${finished ? PrecisionTimer.formatFull(l.time) : status}</td>
+      ${splits}
+    </tr>`;
+  };
+
+  const rows = [
+    ...sorted.map((l, i) => makeRow(l, i + 1)),
+    ...dnf.map(l => makeRow(l, null)),
+  ].join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;margin:24px;color:#222}
+  .header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .brand{font-size:22px;font-weight:900;color:#ff6200;letter-spacing:2px}
+  .meta{font-size:13px;color:#555;line-height:2;margin-bottom:14px}
+  .meta b{color:#222}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{background:#ff6200;color:#fff;padding:9px 12px;text-align:center;font-weight:700}
+  td{padding:8px 12px;text-align:center;border-bottom:1px solid #eee}
+  tr:nth-child(even) td{background:#fafafa}
+  .gold-row td{background:#fffde7;font-weight:700}
+  .dnf-row td{color:#aaa}
+  .time-cell{font-family:monospace;font-size:15px;font-weight:700;color:#ff6200}
+  .gold-row .time-cell{color:#e65100}
+  .footer{font-size:11px;color:#bbb;margin-top:16px}
+</style></head><body>
+<div class="header">
+  <span class="brand">竞迹</span>
+  <span style="font-size:15px;color:#555">精准计时成绩单</span>
+</div>
+<div class="meta">
+  ${orgName ? `<b>学校/组织：</b>${orgName}&emsp;` : ''}
+  <b>比赛：</b>${raceName}&emsp;
+  <b>日期：</b>${date}&emsp;
+  ${dist ? `<b>距离：</b>${dist}&emsp;` : ''}
+  <b>第 ${race.round} 轮 · 第 ${race.group} 组</b>
+</div>
+<table>
+  <thead><tr><th>名次</th><th>道次</th><th>姓名</th><th>成绩</th>${thSplits}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">由 竞迹 JingJi 生成 · ${new Date().toLocaleString('zh-CN')}</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fname = [orgName, raceName, `第${race.round}轮第${race.group}组`].filter(Boolean).join('_');
+  a.href = url; a.download = `${fname}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('成绩单已导出', 'success');
+}
+
+function obsExportGroup() {
+  const ri = state.obsRaceInfo;
+  const results = state.obsResults.filter(r => !r.isDNF).sort((a,b) => a.raceTime - b.raceTime);
+  const dnfs = state.obsResults.filter(r => r.isDNF);
+  const medals = ['🥇','🥈','🥉'];
+  const org = DOM.orgName?.value?.trim() || '';
+
+  const rows = [
+    ...results.map((r,i) => `<tr class="${i===0?'gold-row':''}">
+      <td>${medals[i]||i+1}</td><td>${(r.laneIdx??i)+1}</td>
+      <td>${r.athleteName||''}</td>
+      <td class="time-cell">${PrecisionTimer.formatFull(r.raceTime)}</td>
+    </tr>`),
+    ...dnfs.map(r => `<tr class="dnf-row"><td>DNF</td><td>${(r.laneIdx??'')+1}</td><td>${r.athleteName||''}</td><td>DNF</td></tr>`),
+  ].join('');
+
+  const lapStr = ri.lapsNeeded > 1 ? ` · ${ri.lapsNeeded}圈` : '';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;margin:24px;color:#222}
+  .brand{font-size:22px;font-weight:900;color:#ff6200;letter-spacing:2px}
+  .meta{font-size:13px;color:#555;line-height:2;margin-bottom:14px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{background:#ff6200;color:#fff;padding:9px 12px;text-align:center}
+  td{padding:8px 12px;text-align:center;border-bottom:1px solid #eee}
+  .gold-row td{background:#fffde7;font-weight:700}
+  .dnf-row td{color:#aaa}
+  .time-cell{font-family:monospace;font-size:16px;font-weight:700;color:#ff6200}
+  .footer{font-size:11px;color:#bbb;margin-top:16px}
+</style></head><body>
+<div class="brand">竞迹</div>
+<div class="meta">
+  ${org?`<b>学校/组织：</b>${org}&emsp;`:''}
+  ${ri.distance?`<b>距离：</b>${ri.distance}m${lapStr}&emsp;`:''}
+  <b>第${ri.round||'?'}轮 · 第${ri.group||'?'}组</b>
+</div>
+<table><thead><tr><th>名次</th><th>道次</th><th>姓名</th><th>成绩</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<div class="footer">由 竞迹 JingJi 成绩端生成 · ${new Date().toLocaleString('zh-CN')}</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fname = [org, ri.distance?`${ri.distance}m`:'', `第${ri.round||1}轮第${ri.group||1}组`].filter(Boolean).join('_');
+  a.href = url; a.download = `${fname}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('成绩单已导出', 'success');
+}
+
+// ── 保存成绩到管理后台 localStorage & session history ───
 function saveGroupToHistory(race) {
   const ADMIN_KEY = 'jingjitimer-history';
   const BACKUP_KEY = 'jingjitimer-backup';
@@ -2338,6 +3362,9 @@ function saveGroupToHistory(race) {
   state.sessionHistory.unshift(group);
   if (state.sessionHistory.length > 50) state.sessionHistory.length = 50;
 
+  // 更新运动员最佳成绩
+  updateBestsFromRace(race);
+
   // 广播成绩到已连接的观察端
   if (state.role === 'start' && sync.connected) {
     sync.send('RACE_GROUP_RESULT', group);
@@ -2361,28 +3388,16 @@ function restoreFromBackup() {
   }
   return 0;
 }
-        raceTime: l.time,
-        isDNF:    !!l.dnf,
-        rank:     l.rank,
-      })),
-  };
 
-  // Save to admin localStorage
-  try {
-    const existing = JSON.parse(localStorage.getItem(ADMIN_KEY) || '[]');
-    existing.unshift(group);
-    if (existing.length > 200) existing.length = 200;  // cap at 200 groups
-    localStorage.setItem(ADMIN_KEY, JSON.stringify(existing));
-  } catch (e) { console.warn('Failed to save group history', e); }
-
-  // Add to session history (for live observer catch-up)
-  state.sessionHistory.unshift(group);
-  if (state.sessionHistory.length > 50) state.sessionHistory.length = 50;
-
-  // Broadcast group result to any connected observers
-  if (state.role === 'start' && sync.connected) {
-    sync.send('RACE_GROUP_RESULT', group);
-  }
+// 清除历史成绩
+function clearResults() {
+  if (!confirm('确定清除所有历史成绩？此操作不可撤销。')) return;
+  localStorage.removeItem('race-history');
+  localStorage.removeItem('jingjitimer-history');
+  localStorage.removeItem(ATHLETE_BEST_KEY);
+  loadHistory();
+  renderTrendChart();
+  showToast('历史成绩已清除', 'success');
 }
 
 function renderHistory(history) {
@@ -2395,16 +3410,6 @@ function renderHistory(history) {
       ${best ? `<div class="history-best">🥇 ${best.name} · ${PrecisionTimer.formatFull(best.time)}</div>` : ''}
     </div>`;
   }).join('');
-}
-
-// 清除历史成绩
-function clearResults() {
-  if (!confirm('确定清除所有历史成绩？此操作不可撤销。')) return;
-  localStorage.removeItem('race-history');
-  localStorage.removeItem('jingjitimer-history');
-  loadHistory();
-  renderTrendChart();
-  showToast('历史成绩已清除', 'success');
 }
 
 // 绘制成绩趋势图表
@@ -2747,7 +3752,7 @@ function attachEventListeners() {
     if (DOM.fsSensVal) DOM.fsSensVal.textContent = v;
   });
 
-  // Performance mode toggle
+  // Performance mode toggle (with perf monitoring toggle)
   document.querySelectorAll('.perf-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
@@ -2759,15 +3764,32 @@ function attachEventListeners() {
     });
   });
 
-  // Update perf stats display periodically
-  const perfStatsInterval = setInterval(() => {
-    if (DOM.fsPerfStats && detector) {
-      const stats = detector.getPerformanceStats?.();
-      if (stats) {
+  // 性能监控开关按钮
+  $('btn-perf-monitor-toggle')?.addEventListener('click', () => {
+    state.perfMonitoringEnabled = !state.perfMonitoringEnabled;
+    const btn = $('btn-perf-monitor-toggle');
+    if (btn) {
+      btn.textContent = state.perfMonitoringEnabled ? '关闭监控' : '开启监控';
+      btn.classList.toggle('active', state.perfMonitoringEnabled);
+    }
+    if (DOM.fsPerfStats) {
+      if (state.perfMonitoringEnabled) {
         DOM.fsPerfStats.classList.remove('hidden');
-        if (DOM.fsFpsVal) DOM.fsFpsVal.textContent = stats.fps?.toFixed(1) || '--';
-        if (DOM.fsModeVal) DOM.fsModeVal.textContent = stats.mode === 'high' ? '高' : stats.mode === 'balanced' ? '中' : '低';
+      } else {
+        DOM.fsPerfStats.classList.add('hidden');
       }
+    }
+    showToast(state.perfMonitoringEnabled ? '性能监控已开启' : '性能监控已关闭', 'info');
+  });
+
+  // Update perf stats display periodically (only if monitoring is enabled)
+  const perfStatsInterval = setInterval(() => {
+    if (!state.perfMonitoringEnabled || !DOM.fsPerfStats || !detector) return;
+    const stats = detector.getPerformanceStats?.();
+    if (stats) {
+      DOM.fsPerfStats.classList.remove('hidden');
+      if (DOM.fsFpsVal) DOM.fsFpsVal.textContent = stats.fps?.toFixed(1) || '--';
+      if (DOM.fsModeVal) DOM.fsModeVal.textContent = stats.mode === 'high' ? '高' : stats.mode === 'balanced' ? '中' : '低';
     }
   }, 1000);
 
@@ -2886,6 +3908,33 @@ function attachEventListeners() {
     });
   });
 
+  // ── 教师快速开始按钮 ──────────────────────────────────
+  const quickStartPresets = [
+    { id: 'btn-quick-50m', distance: 50, lanes: 4 },
+    { id: 'btn-quick-100m', distance: 100, lanes: 4 },
+    { id: 'btn-quick-200m', distance: 200, lanes: 4 },
+    { id: 'btn-quick-400m', distance: 400, lanes: 4 },
+  ];
+  quickStartPresets.forEach(preset => {
+    const btn = $(preset.id);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        // 应用预设
+        state.distance = preset.distance;
+        state.laneCount = preset.lanes;
+        state.lapCount = preset.distance > 200 ? Math.ceil(preset.distance / 100) : 1;
+        // 更新UI
+        DOM.laneCountDisp.textContent = state.laneCount;
+        DOM.distSelect.value = preset.distance;
+        updateLapDisplay?.();
+        saveSettings();
+        broadcastConfig?.();
+        showTab('race');
+        showToast(`✅ 已设置 ${preset.distance}m 比赛，${preset.lanes}条跑道`, 'success');
+      });
+    }
+  });
+
   // Start mode
   document.querySelectorAll('input[name="start-mode"]').forEach(r => {
     r.addEventListener('change', () => {
@@ -2915,24 +3964,80 @@ function attachEventListeners() {
   // Practice mode
   $('btn-practice-mode')?.addEventListener('click', () => enterPracticeMode());
 
-  // 独立发令按钮
+  // 独立发令按钮 - 支持手动发令流程
+  let gejiuweiClicked = false;
+  let yubeiClicked = false;
+
   $('btn-gejiuwei')?.addEventListener('click', async () => {
     audio.resume();
+    gejiuweiClicked = true;
+    yubeiClicked = false;
     DOM.timerSub.textContent = '📢 各就位...';
     await starterAudio.playGeJiuWei();
-    DOM.timerSub.textContent = '准备就绪';
+    DOM.timerSub.textContent = '⚡ 预备（等待发令）';
+    showToast('📢 各就位完成，等待"枪声"启动计时', 'info');
   });
   $('btn-yubei')?.addEventListener('click', async () => {
     audio.resume();
+    yubeiClicked = true;
     DOM.timerSub.textContent = '⚡ 预备...';
     await starterAudio.playYuBei();
-    DOM.timerSub.textContent = '准备就绪';
+    DOM.timerSub.textContent = '🔫 等待枪声...';
+    showToast('⚡ 预备完毕，等待"枪声"启动计时', 'info');
   });
   $('btn-gunshot')?.addEventListener('click', async () => {
     audio.resume();
-    DOM.timerSub.textContent = '🔫 枪声！';
+    DOM.timerSub.textContent = '🔫 枪响！计时开始';
     await starterAudio.playGunshot();
-    DOM.timerSub.textContent = '准备就绪';
+
+    // 重置发令状态
+    gejiuweiClicked = false;
+    yubeiClicked = false;
+
+    // 如果比赛已开始，只更新时间显示
+    if (state.raceStarted) {
+      showToast('🔫 枪声已响', 'success');
+      return;
+    }
+
+    // 启动计时器
+    timer.start();
+    DOM.timerDisplay.classList.add('running');
+    DOM.btnStart.classList.add('hidden');
+    DOM.btnStop.classList.remove('hidden');
+    DOM.btnAbort?.classList.remove('hidden');
+
+    // 启用录像
+    if (state.videoEnabled && state.camGranted && recorder.hasVideo) {
+      recorder.start();
+      DOM.recBadge.classList.remove('hidden');
+    }
+
+    // 启用终点检测（单机模式）
+    if (state.role === 'solo' && state.camGranted && DOM.raceCanvas) {
+      detector.stop();
+      const graceMs = state.lapCount > 1 ? 8000 : Math.round(minRaceGraceMs(state.distance) * 0.70);
+      const graceUntil = performance.now() + graceMs;
+      detector.cooldownMs = state.lapCount > 1 ? 3000 : 1500;
+      DOM.timerSub.textContent = '📷 保护期 ' + Math.ceil(graceMs / 1000) + 's...';
+      detector.start(
+        (laneIdx) => {
+          if (performance.now() < graceUntil) return;
+          if (laneIdx < state.laneCount) finishLane(laneIdx);
+        },
+        (level) => {
+          if (performance.now() < graceUntil) {
+            const secLeft = Math.ceil((graceUntil - performance.now()) / 1000);
+            DOM.timerSub.textContent = `📷 保护期 ${secLeft}s — 忽略误触发`;
+            return;
+          }
+          const pct = Math.min(100, level * 100);
+          DOM.timerSub.textContent = level > 0.3 ? `🔴 冲线检测 (${Math.round(pct)}%)` : `🟢 终点监听中`;
+        }
+      );
+    }
+
+    showToast('🚀 计时已启动！', 'success');
   });
 
   // Race controls
@@ -2984,6 +4089,31 @@ function attachEventListeners() {
   // Results actions
   DOM.btnDlVideo?.addEventListener('click',    () => recorder.download(DOM.raceName.value));
   DOM.btnExportCsv?.addEventListener('click',  () => exportResults());
+  DOM.btnExportXlsx?.addEventListener('click', async () => {
+    const race = state.lastRace || getHistory()[0];
+    if (race) {
+      try {
+        await exportXLSX(race, {
+          orgName: state.orgName,
+          raceName: state.raceName,
+          distance: state.distance,
+          includeBest: true,
+          includeLapTimes: true
+        });
+      } catch (e) {
+        console.error('XLSX export failed:', e);
+        showToast('导出失败，请重试', 'error');
+      }
+    } else {
+      showToast('暂无成绩可导出', 'warn');
+    }
+  });
+  DOM.btnExportPdf?.addEventListener('click', async () => {
+    const race = state.lastRace || getHistory()[0];
+    if (race) await exportToPDF(race, { includeWeather: true, includeBest: true });
+    else showToast('暂无成绩可导出', 'warn');
+  });
+  DOM.btnBatchExport?.addEventListener('click', () => showBatchExportMenu());
   DOM.btnClearRes?.addEventListener('click',  () => clearResults());
   DOM.btnToggleTrend?.addEventListener('click', () => renderTrendChart());
 
@@ -3114,51 +4244,40 @@ function attachEventListeners() {
   }
 
   async function runBenchmark() {
+    // 简化基准测试：只做一次快速测试，不显示详细进度
     const resultEl = $('diag-result');
     const progressEl = $('diag-progress-bar');
     const benchmarkEl = $('diag-benchmark');
 
     if (benchmarkEl) benchmarkEl.classList.remove('hidden');
+    if (progressEl) progressEl.style.width = '50%';
 
-    // 运行JS基准测试
-    let score = 0;
-    const iterations = 100000;
-
-    for (let i = 0; i < 3; i++) {
-      const start = performance.now();
-      for (let j = 0; j < iterations; j++) {
-        Math.sqrt(j) * Math.sin(j) + Math.cos(j);
-      }
-      score += (performance.now() - start);
-      if (progressEl) {
-        progressEl.style.width = ((i + 1) / 3 * 100) + '%';
-      }
-      await new Promise(r => setTimeout(r, 100));
+    const iterations = 50000;
+    const start = performance.now();
+    for (let j = 0; j < iterations; j++) {
+      Math.sqrt(j) * Math.sin(j) + Math.cos(j);
     }
-    const avgTime = score / 3;
+    const elapsed = performance.now() - start;
 
-    // 计算性能评级
+    if (progressEl) progressEl.style.width = '100%';
+
+    // 简化的性能评级
     let rating = 'unknown';
-    if (avgTime < 5) rating = 'excellent';
-    else if (avgTime < 10) rating = 'good';
-    else if (avgTime < 20) rating = 'average';
+    if (elapsed < 5) rating = 'excellent';
+    else if (elapsed < 10) rating = 'good';
+    else if (elapsed < 20) rating = 'average';
     else rating = 'slow';
 
-    const ratingText = { excellent: '🟢 优秀', good: '🟡 良好', average: '🟠 一般', slow: '🔴 较慢' };
+    const ratingText = { excellent: '优秀', good: '良好', average: '一般', slow: '较慢' };
 
     if (resultEl) {
-      resultEl.innerHTML = `
-        <div class="diag-result-item">
-          <div class="diag-result-label">执行时间</div>
-          <div class="diag-result-value">${avgTime.toFixed(2)}ms</div>
-        </div>
-        <div class="diag-result-item">
-          <div class="diag-result-label">性能评级</div>
-          <div class="diag-result-value">${ratingText[rating] || rating}</div>
-        </div>
-      `;
+      resultEl.innerHTML = `<span>${ratingText[rating] || rating}</span>`;
     }
   }
+
+  // Initialize language support
+  initLanguage();
+  createLangSwitcher('header-status');
 
   // Help / guide buttons
   const openGuide = () => $('guide-overlay')?.classList.remove('hidden');

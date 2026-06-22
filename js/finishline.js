@@ -1,6 +1,8 @@
-// AI finish line detection via pixel motion analysis v3.0
+// AI finish line detection via pixel motion analysis v4.1
 // 优化：环境自适应阈值 + 多人冲线毫秒级精确排序 + 误触发防护
 //       + 运动方向判断（只检测接近终点的运动）+ 提前触发防护
+//       + 双区域检测 + 方向滤波 + 运动特征匹配 + 时间序列平滑 + 遮挡处理
+// 新增：帧内时间插值 + 连续多帧确认 + 增强相机校准
 
 export class FinishLineDetector {
   constructor() {
@@ -54,30 +56,58 @@ export class FinishLineDetector {
     this._minMotionPeak    = 8;     // 最小运动峰值（低于此值忽略）
     this._falseTriggerCount = 0;    // 误触发计数
     this._lastFalseTrigger = 0;    // 上次误触发时间
+
+    // ── 连续多帧确认机制 ────────────────────────────────
+    this._consecutiveConfirm    = 3;     // 连续确认帧数（需达到才触发）
+    this._frameConfirmMap      = {};    // 每道次的连续帧计数: { [laneIdx]: count }
+    this._minConsecutiveFrames = 2;     // 最小连续帧阈值
+    this._confirmResetDelay    = 200;   // 确认重置延迟（毫秒）
+    this._lastConfirmReset     = {};    // 每道次上次确认重置时间: { [laneIdx]: ts }
+
+    // ── 帧内时间插值 ───────────────────────────────────
+    this._frameMotionCache      = [];    // 缓存最近帧的运动数据: [{motionPerRow, timestamp}]
+    this._frameCacheSize       = 4;     // 缓存帧数
+    this._interpolateEnabled   = true;  // 帧内插值开关
+    this._lastInterpolatedTs   = {};   // 每道次的上次插值时间: { [laneIdx]: ts }
+    this._interpolateMinGap    = 16;   // 插值最小间隔（毫秒，约1帧）
+
+    // ── 优化版多人冲线排序 ──────────────────────────────
+    this._crossingBuffer       = [];    // 冲线事件缓冲（用于智能聚合）
+    this._bufferFlushInterval  = 50;    // 缓冲刷新间隔（毫秒）
+    this._flushTimer           = null;
+    this._pendingCrossings     = [];   // 待处理冲线事件
+    this._crossingId           = 0;     // 冲线事件唯一ID
+
     // ── 相机延迟校准 ───────────────────────────────────
-    this._cameraDelayMs    = 0;     // 相机处理延迟（毫秒），用于时间戳修正
-    this._calibrating      = false; // 校准中标志
-    this._calibrationBeepTs = 0;    // 发出 beep 时的 performance.now()
-    this._calibrationResults = [];  // 多次测量结果
-    this._calibrationTimer  = null;
-    this._pendingMotionTs   = 0;    // 检测到运动时的 performance.now()
+    this._cameraDelayMs        = 0;     // 相机处理延迟（毫秒），用于时间戳修正
+    this._calibrating          = false; // 校准中标志
+    this._calibrationBeepTs    = 0;    // 发出 beep 时的 performance.now()
+    this._calibrationResults   = [];   // 多次测量结果
+    this._calibrationTimer     = null;
+    this._pendingMotionTs      = 0;    // 检测到运动时的 performance.now()
+    this._calibrationSamples   = [];   // 校准样本（扩展版本）
+    this._targetCalibrationSamples = 5; // 目标校准样本数
+    this._calibrationStartTs   = 0;    // 校准开始时间戳
+    this._soundLatencyCompensation = 20; // 声音延迟补偿（毫秒）
 
-  // ── 新增：提前触发防护 ─────────────────────────────
-  this._raceStartTime = null;    // 比赛开始时间
-  this._blockDurationMs = 3000;  // 起跑阶段屏蔽时长（3秒）
-  this._isBlocked = true;        // 是否在屏蔽期内
+    // ── 提前触发防护 ───────────────────────────────────
+    this._raceStartTime    = null;    // 比赛开始时间
+    this._blockDurationMs  = 3000;    // 起跑阶段屏蔽时长（3秒）
+    this._isBlocked        = true;    // 是否在屏蔽期内
 
-  // ── 新增：运动方向判断 ─────────────────────────────
-  this._prevMotionFrame = null;  // 上一帧的运动数据
-  this._frameTimestamps = [];    // 帧时间戳
-  this._interpolateEnabled = true; // 帧内插值
-  this._lastFrameDelta = 0;      // 上一帧间隔
-}
+    // ── 运动方向判断 ───────────────────────────────────
+    this._prevMotionFrame  = null;    // 上一帧的运动数据
+    this._frameTimestamps  = [];       // 帧时间戳
+    this._lastFrameDelta   = 0;       // 上一帧间隔
+  }
 
   setLaneDone(laneIdx, label = '✓') {
     this._laneDone.add(laneIdx);
     this._cooldowns[laneIdx] = true;
     this._laneFinishLabel[laneIdx] = label;
+    // 重置该道次的确认状态
+    delete this._frameConfirmMap[laneIdx];
+    delete this._lastConfirmReset[laneIdx];
   }
 
   resetLaneDone() {
@@ -87,6 +117,12 @@ export class FinishLineDetector {
     // 重置冲线队列
     this._crossingQueue = [];
     this._falseTriggerCount = 0;
+    // 重置帧确认状态
+    this._frameConfirmMap = {};
+    this._lastConfirmReset = {};
+    // 重置插值状态
+    this._frameMotionCache = [];
+    this._lastInterpolatedTs = {};
   }
 
   get threshold()  { return this._threshold; }
@@ -191,7 +227,9 @@ export class FinishLineDetector {
       detectionWidth: this._W,
       bufferSize: this._frameBufferSize,
       ambientLight: this._ambientLight,
-      falseTriggerCount: this._falseTriggerCount
+      falseTriggerCount: this._falseTriggerCount,
+      cameraDelay: this._cameraDelayMs,
+      isCalibrated: this._cameraDelayMs > 0,
     };
   }
 
@@ -266,6 +304,13 @@ export class FinishLineDetector {
 
     this._prevSlice.set(slice.data);
 
+    // 缓存帧运动数据（用于帧内时间插值）
+    const currentTs = performance.now();
+    this._frameMotionCache.push({ motionPerRow: Float32Array.from(motionPerRow), timestamp: currentTs });
+    if (this._frameMotionCache.length > this._frameCacheSize) {
+      this._frameMotionCache.shift();
+    }
+
     this._frameBuffer.push(motionPerRow);
     if (this._frameBuffer.length > this._frameBufferSize) {
       this._frameBuffer.shift();
@@ -297,12 +342,11 @@ export class FinishLineDetector {
     // 处理每个检测到的blob
     blobs.forEach(blob => {
       // ── 核心：只检测 blob 前沿越过中线才算真正冲线 ──
-      // 前沿是指运动员最先到达终点线的部分
       if (blob.leadingEdge < this._W / 2) return;
 
       // 用精确算法分配道次（峰值优先）
       const laneIdx = this._assignLane(blob, H);
-      if (this._laneDone.has(laneIdx)) return;  // 永久锁定：完赛车道不再触发
+      if (this._laneDone.has(laneIdx)) return;
       if (this._cooldowns[laneIdx]) return;
 
       // 误触发防护：检查运动强度
@@ -317,8 +361,13 @@ export class FinishLineDetector {
         return;
       }
 
-      // 获取高精度时间戳
-      const ts = this.getHighPrecisionTimestamp();
+      // ── 连续多帧确认机制 ──────────────────────────────
+      if (!this._checkConsecutiveFrames(laneIdx, blob, smoothedMotion)) {
+        return; // 未达到连续帧要求
+      }
+
+      // 获取高精度时间戳（带帧内插值）
+      const ts = this._interpolateCrossingTime(laneIdx, blob, smoothedMotion, currentTs);
 
       // 记录运动时刻（用于相机延迟校准）
       this._recordMotionTs();
@@ -332,6 +381,165 @@ export class FinishLineDetector {
       // 添加到冲线队列（用于精确排序）
       this._addToCrossingQueue(laneIdx, ts, blob.peak);
     });
+
+    // 重置超时的确认计数
+    this._resetStaleConfirmations(currentTs);
+  }
+
+  // ── 连续多帧确认机制 ────────────────────────────────────
+  // 检查指定道次是否在连续多帧中检测到运动
+  // 返回 true 表示通过确认，可以触发冲线
+  _checkConsecutiveFrames(laneIdx, blob, motionPerRow) {
+    const currentTs = performance.now();
+
+    // 获取该道次在当前帧的运动强度
+    const laneMotion = this._getLaneMotion(laneIdx, motionPerRow);
+    const motionThreshold = this._threshold * 0.5;
+
+    // 如果当前帧该道次没有明显运动，重置计数
+    if (laneMotion < motionThreshold) {
+      this._frameConfirmMap[laneIdx] = 0;
+      return false;
+    }
+
+    // 增加确认计数
+    if (!this._frameConfirmMap[laneIdx]) {
+      this._frameConfirmMap[laneIdx] = 0;
+    }
+    this._frameConfirmMap[laneIdx]++;
+
+    // 检查是否达到连续帧要求
+    const requiredFrames = Math.max(
+      this._minConsecutiveFrames,
+      Math.min(this._consecutiveConfirm, Math.ceil(this._fps / 15)) // 动态调整：低帧率需要更少帧
+    );
+
+    if (this._frameConfirmMap[laneIdx] >= requiredFrames) {
+      // 确认通过，重置计数（但保留状态，下次运动可快速确认）
+      this._frameConfirmMap[laneIdx] = Math.floor(requiredFrames / 2); // 部分重置，避免立即再次触发
+      return true;
+    }
+
+    return false;
+  }
+
+  // 获取指定道次的运动强度
+  _getLaneMotion(laneIdx, motionPerRow) {
+    if (!motionPerRow) return 0;
+
+    const laneTop = Math.floor((laneIdx / this._laneCount) * this._H);
+    const laneBottom = Math.floor(((laneIdx + 1) / this._laneCount) * this._H);
+
+    let sum = 0;
+    let count = 0;
+    for (let y = laneTop; y < laneBottom; y++) {
+      if (y >= 0 && y < motionPerRow.length) {
+        sum += motionPerRow[y];
+        count++;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
+  // 重置超时的确认状态
+  _resetStaleConfirmations(currentTs) {
+    for (const laneIdx of Object.keys(this._frameConfirmMap)) {
+      const lastReset = this._lastConfirmReset[laneIdx] || 0;
+      if (currentTs - lastReset > this._confirmResetDelay && this._frameConfirmMap[laneIdx] > 0) {
+        // 只有当该道次持续无运动时才重置
+        const lastFrame = this._frameBuffer.length > 0 ? this._frameBuffer[this._frameBuffer.length - 1] : null;
+        const laneMotion = this._getLaneMotion(laneIdx, lastFrame);
+        if (laneMotion < this._threshold * 0.3) {
+          this._frameConfirmMap[laneIdx] = 0;
+        }
+      }
+    }
+  }
+
+  // ── 帧内时间插值方法 ────────────────────────────────────
+  // 根据运动数据估算更精确的过线时刻
+  _interpolateCrossingTime(laneIdx, blob, motionPerRow, frameTimestamp) {
+    if (!this._interpolateEnabled || this._frameMotionCache.length < 2) {
+      return frameTimestamp;
+    }
+
+    // 检查插值间隔
+    const lastTs = this._lastInterpolatedTs[laneIdx] || 0;
+    if (frameTimestamp - lastTs < this._interpolateMinGap) {
+      return frameTimestamp;
+    }
+
+    const cache = this._frameMotionCache;
+    const currentMotion = motionPerRow;
+    const prevMotion = cache.length >= 2 ? cache[cache.length - 2].motionPerRow : currentMotion;
+
+    // 计算该道次的运动变化
+    const currentLaneMotion = this._getLaneMotion(laneIdx, currentMotion);
+    const prevLaneMotion = this._getLaneMotion(laneIdx, prevMotion);
+
+    // 运动增量：当前帧运动增加越多，说明过线时刻越接近当前帧
+    const motionDelta = currentLaneMotion - prevLaneMotion;
+    const totalMotion = currentLaneMotion + prevLaneMotion;
+
+    if (totalMotion < this._threshold * 0.5 || motionDelta <= 0) {
+      // 运动未增加，使用帧时间戳
+      return frameTimestamp;
+    }
+
+    // 计算运动峰值位置的变化
+    const currentPeakRow = this._findPeakRow(laneIdx, currentMotion);
+    const prevPeakRow = this._findPeakRow(laneIdx, prevMotion);
+
+    // 峰值向中线移动说明正在接近终点
+    const peakDelta = currentPeakRow - prevPeakRow;
+    const halfStrip = this._W / 2;
+
+    if (peakDelta > 0) {
+      // 峰值向 strip 右侧移动，正在穿越终点
+      // 计算插值比例：峰值越接近中线，过线时刻越接近当前帧
+      const proximity = Math.min(1, currentPeakRow / halfStrip);
+
+      // 帧间隔估计
+      const frameInterval = cache.length >= 2
+        ? cache[cache.length - 1].timestamp - cache[cache.length - 2].timestamp
+        : 33; // 默认 30fps
+
+      // 插值修正：向当前帧方向偏移
+      // motionDelta 越大，偏移越多
+      const interpolationFactor = Math.min(0.9, motionDelta / (totalMotion + 1)) * proximity;
+      const offset = frameInterval * (1 - interpolationFactor);
+
+      const interpolatedTs = frameTimestamp - offset;
+
+      // 限制插值范围在帧间隔内
+      const minTs = (cache.length >= 2 ? cache[cache.length - 2].timestamp : frameTimestamp - frameInterval);
+      const clampedTs = Math.max(minTs, Math.min(frameTimestamp, interpolatedTs));
+
+      this._lastInterpolatedTs[laneIdx] = clampedTs;
+      return clampedTs;
+    }
+
+    return frameTimestamp;
+  }
+
+  // 找到指定道次的峰值位置
+  _findPeakRow(laneIdx, motionPerRow) {
+    if (!motionPerRow) return 0;
+
+    const laneTop = Math.floor((laneIdx / this._laneCount) * this._H);
+    const laneBottom = Math.floor(((laneIdx + 1) / this._laneCount) * this._H);
+
+    let maxMotion = 0;
+    let peakRow = laneTop;
+
+    for (let y = laneTop; y < laneBottom; y++) {
+      if (y >= 0 && y < motionPerRow.length && motionPerRow[y] > maxMotion) {
+        maxMotion = motionPerRow[y];
+        peakRow = y;
+      }
+    }
+
+    return peakRow;
   }
 
   // 更新环境光强度
@@ -385,9 +593,13 @@ export class FinishLineDetector {
     this._lastFalseTrigger = now;
   }
 
-  // 添加到冲线队列
+  // ── 优化版多人冲线排序 ────────────────────────────────────
+  // 添加到冲线缓冲（用于智能聚合和精确排序）
   _addToCrossingQueue(laneIdx, timestamp, peak) {
+    const crossingId = ++this._crossingId;
+
     this._crossingQueue.push({
+      id: crossingId,
       laneIdx,
       timestamp,
       peak,
@@ -407,15 +619,17 @@ export class FinishLineDetector {
       return;
     }
 
-    // 按时间戳排序
+    // ── 优化排序算法 ────────────────────────────────────
+    // 1. 按时间戳排序
     this._crossingQueue.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 2. 检测并处理同一帧内的多人冲线
+    this._crossingQueue = this._resolveSimultaneousCrossings(this._crossingQueue);
 
     const event = this._crossingQueue.shift();
 
     // 时间戳减去相机延迟，得到真实的过线时刻
-    const correctedTs = this._cameraDelayMs > 0
-      ? event.timestamp - this._cameraDelayMs
-      : event.timestamp;
+    const correctedTs = this._applyCameraDelayCorrection(event.timestamp);
 
     // 永久锁定检查：运动员已完赛，不再触发任何回调
     if (this._laneDone.has(event.laneIdx)) {
@@ -426,7 +640,7 @@ export class FinishLineDetector {
     // 同道次最小间隔检查（用校正后时间戳）
     const sameLaneLastTs = this._lastCrossingTs[event.laneIdx] || -Infinity;
     if (performance.now() - sameLaneLastTs < this._minGapBetweenLane) {
-      this._processCrossingQueue();
+      this._crossingProcessTimer = setTimeout(() => this._processCrossingQueue(), 10);
       return;
     }
 
@@ -453,6 +667,83 @@ export class FinishLineDetector {
 
     // 继续处理队列（每次只处理一个）
     this._crossingProcessTimer = setTimeout(() => this._processCrossingQueue(), 10);
+  }
+
+  // 解决同时冲线的情况（同一帧内检测到多人）
+  // 使用运动特征和位置信息进行二次排序
+  _resolveSimultaneousCrossings(queue) {
+    if (queue.length < 2) return queue;
+
+    // 按时间戳分组，找出时间差在帧间隔内的冲线事件
+    const frameInterval = 33; // 假设 30fps
+    const groups = [];
+    let currentGroup = [queue[0]];
+
+    for (let i = 1; i < queue.length; i++) {
+      const timeDiff = queue[i].timestamp - currentGroup[currentGroup.length - 1].timestamp;
+
+      if (timeDiff <= frameInterval) {
+        // 认为是同时冲线，加入当前组
+        currentGroup.push(queue[i]);
+      } else {
+        // 时间差超过帧间隔，保存当前组并开始新组
+        if (currentGroup.length > 1) {
+          groups.push(currentGroup);
+        }
+        currentGroup = [queue[i]];
+      }
+    }
+
+    // 处理最后一组
+    if (currentGroup.length > 1) {
+      groups.push(currentGroup);
+    }
+
+    // 对每个同时冲线组进行排序
+    for (const group of groups) {
+      group.sort((a, b) => {
+        // 优先使用运动强度排序（运动越强，过线越早）
+        const peakDiff = b.peak - a.peak;
+        if (Math.abs(peakDiff) > this._threshold * 0.5) {
+          return peakDiff; // 峰值高的排前面
+        }
+
+        // 峰值相近时，使用帧内插值数据辅助排序
+        // 如果有更精确的插值时间戳，使用它
+        if (this._frameMotionCache.length >= 2) {
+          const prevCache = this._frameMotionCache[this._frameMotionCache.length - 2];
+          const currCache = this._frameMotionCache[this._frameMotionCache.length - 1];
+
+          // 计算每个道次在帧间的运动变化
+          const aPrevMotion = this._getLaneMotion(a.laneIdx, prevCache?.motionPerRow);
+          const aCurrMotion = this._getLaneMotion(a.laneIdx, currCache?.motionPerRow);
+          const bPrevMotion = this._getLaneMotion(b.laneIdx, prevCache?.motionPerRow);
+          const bCurrMotion = this._getLaneMotion(b.laneIdx, currCache?.motionPerRow);
+
+          const aMotionDelta = aCurrMotion - aPrevMotion;
+          const bMotionDelta = bCurrMotion - bPrevMotion;
+
+          // 运动增量大的排前面
+          if (Math.abs(aMotionDelta - bMotionDelta) > 1) {
+            return bMotionDelta - aMotionDelta;
+          }
+        }
+
+        // 最后使用 ID 作为稳定排序
+        return a.id - b.id;
+      });
+    }
+
+    // 重建队列
+    return queue;
+  }
+
+  // 应用相机延迟校正
+  _applyCameraDelayCorrection(timestamp) {
+    if (this._cameraDelayMs > 0) {
+      return timestamp - this._cameraDelayMs;
+    }
+    return timestamp;
   }
 
   // 边缘增强算法
@@ -901,20 +1192,21 @@ export class FinishLineDetector {
     displayCanvas.addEventListener('mouseleave', onEnd);
   }
 
-  // ── 相机延迟校准 ───────────────────────────────────────
+  // ── 增强版相机延迟校准 ─────────────────────────────────
   // 通过声音触发 + 运动检测，测量相机处理延迟
-  // 步骤：发出声音 → 记录时间 → 镜头检测到运动 → 计算延迟
+  // 改进：多次采样、异常值过滤、中位数计算
   startCalibration(audioCtx) {
     if (this._calibrating) return;
     this._calibrating = true;
     this._calibrationResults = [];
+    this._calibrationStartTs = performance.now();
     this._calibrationTimer = setTimeout(() => this._runCalibrationTrial(audioCtx), 1500);
   }
 
   _runCalibrationTrial(audioCtx) {
     if (!this._calibrating) return;
 
-    // 记录 beep 发出时刻（声音比视觉快约 20ms，这里用声音作为 t=0 参考点）
+    // 记录 beep 发出时刻（加入声音延迟补偿）
     this._calibrationBeepTs = performance.now();
     this._pendingMotionTs = 0;
 
@@ -935,14 +1227,21 @@ export class FinishLineDetector {
     // 等待最多 2000ms 让运动传递到镜头
     setTimeout(() => {
       if (this._pendingMotionTs > 0) {
-        const delay = this._pendingMotionTs - this._calibrationBeepTs;
-        if (delay > 10 && delay < 2000) {
+        // 计算延迟：运动检测时刻 - beep发出时刻 - 声音延迟补偿
+        const delay = this._pendingMotionTs - this._calibrationBeepTs - this._soundLatencyCompensation;
+        if (delay > 5 && delay < 2000) {
           this._calibrationResults.push(delay);
         }
       }
-      // 再跑一次，共 3 次，取中位数
-      if (this._calibrationResults.length < 3) {
-        this._calibrationTimer = setTimeout(() => this._runCalibrationTrial(audioCtx), 2000);
+
+      // 继续采样直到达到目标数量
+      if (this._calibrationResults.length < this._targetCalibrationSamples) {
+        // 检查是否超时（超过10秒则放弃）
+        if (performance.now() - this._calibrationStartTs > 10000) {
+          this._finishCalibration();
+        } else {
+          this._calibrationTimer = setTimeout(() => this._runCalibrationTrial(audioCtx), 2000);
+        }
       } else {
         this._finishCalibration();
       }
@@ -951,15 +1250,52 @@ export class FinishLineDetector {
 
   _finishCalibration() {
     this._calibrating = false;
-    if (this._calibrationResults.length === 0) return;
+    if (this._calibrationResults.length === 0) {
+      this.onCalibrationDone?.(0, []);
+      return;
+    }
 
-    // 取中位数（去掉极端值）
+    // ── 增强的异常值过滤 ──────────────────────────────
     const sorted = [...this._calibrationResults].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
+
+    // 去掉最高和最低的异常值（如果样本足够多）
+    let filteredResults = sorted;
+    if (sorted.length >= 5) {
+      // 去掉最高和最低各一个
+      filteredResults = sorted.slice(1, -1);
+    } else if (sorted.length >= 3) {
+      // 只去掉一个极端值
+      filteredResults = sorted.slice(1);
+    }
+
+    // 计算中位数
+    const medianIdx = Math.floor(filteredResults.length / 2);
+    const median = filteredResults.length % 2 === 0
+      ? (filteredResults[medianIdx - 1] + filteredResults[medianIdx]) / 2
+      : filteredResults[medianIdx];
+
+    // 计算标准差用于评估校准质量
+    const mean = filteredResults.reduce((a, b) => a + b, 0) / filteredResults.length;
+    const variance = filteredResults.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / filteredResults.length;
+    const stdDev = Math.sqrt(variance);
+
+    // 如果标准差过大，说明测量不稳定
+    const isStable = stdDev < mean * 0.3; // 变异系数 < 30% 表示稳定
+
     this._cameraDelayMs = Math.round(median);
 
-    // 通知校准完成回调（如果有）
-    this.onCalibrationDone?.(this._cameraDelayMs, this._calibrationResults);
+    // 通知校准完成回调
+    this.onCalibrationDone?.(this._cameraDelayMs, this._calibrationResults, {
+      mean: Math.round(mean),
+      stdDev: Math.round(stdDev * 100) / 100,
+      isStable,
+      samples: this._calibrationResults.length,
+    });
+  }
+
+  // 手动设置相机延迟（用于手动校准场景）
+  setCameraDelay(delayMs) {
+    this._cameraDelayMs = Math.max(0, Math.min(500, delayMs));
   }
 
   // 手动校准：记录运动时刻
@@ -972,14 +1308,16 @@ export class FinishLineDetector {
       delayMs: this._cameraDelayMs,
       results: [...this._calibrationResults],
       isCalibrated: this._cameraDelayMs > 0,
+      isCalibrating: this._calibrating,
+      sampleCount: this._calibrationResults.length,
     };
   }
 
   resetCalibration() {
     this._cameraDelayMs = 0;
     this._calibrationResults = [];
+    this._calibrationSamples = [];
     this._calibrating = false;
     if (this._calibrationTimer) clearTimeout(this._calibrationTimer);
   }
-}
 }

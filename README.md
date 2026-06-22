@@ -1,65 +1,40 @@
-# 🏃 竞迹 JingJi - 精准计时系统
+# 竞迹计时器 (JingJi Timer)
 
-<div align="center">
-
-![Logo](icons/icon.svg)
-
-**精准计时 · 智能田径**
-
-AI 发令检测 | 终点自动识别 | 慢动作回放 | 多设备同步
-
-[![GitHub Stars](https://img.shields.io/github/stars/BOY147258/jingjitimer?style=social)](https://github.com/BOY147258/jingjitimer)
-[![License](https://img.shields.io/github/license/BOY147258/jingjitimer)](https://github.com/BOY147258/jingjitimer/blob/main/LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/BOY147258/jingjitimer)
-
-</div>
+精准计时 · 智能田径 | Precision Timing for Athletics
 
 ---
 
 ## 📋 目录
 
-- [特性](#-特性)
+- [功能特点](#-功能特点)
 - [快速开始](#-快速开始)
-- [功能介绍](#-功能介绍)
-- [部署指南](#-部署指南)
-- [开发指南](#-开发指南)
+- [使用指南](#-使用指南)
+- [部署方式](#-部署方式)
 - [API 文档](#-api-文档)
-- [更新日志](#-更新日志)
-- [贡献指南](#-贡献指南)
-- [许可证](#-许可证)
+- [开发指南](#-开发指南)
+- [常见问题](#-常见问题)
 
 ---
 
-## ✨ 特性
+## ✨ 功能特点
 
-### 🎯 四大角色模式
+### 核心功能
 
-| 模式 | 说明 |
+| 功能 | 描述 |
 |------|------|
-| **单机模式** | 一台设备，手动记录终点 |
-| **发令端** | 检测枪声，自动控制计时开始 |
-| **终点端** | AI 自动识别冲线，慢动作回放 |
-| **成绩端** | 实时接收成绩，随时导出 Excel |
+| 🔫 **枪声检测** | 自动检测发令枪声，精确控制计时开始 |
+| 🏁 **AI 终点识别** | 智能识别运动员冲线，支持慢动作回放 |
+| 🔗 **多设备同步** | WebSocket 实时同步，支持发令端+终点端+成绩端 |
+| 📊 **多格式导出** | 支持 CSV、Excel、PDF 多种导出格式 |
+| 🌐 **PWA 支持** | 可安装到桌面，离线也能用 |
+| 🌍 **多语言** | 中文/English 随时切换 |
 
-### 🏆 核心功能
+### 技术亮点
 
-- 🚀 **高精度计时** - 毫秒级精度，稳定可靠
-- 🎤 **AI 发令检测** - 自动检测发令枪声，无需手动开始
-- 📹 **终点自动识别** - AI 视觉识别运动员冲线瞬间
-- 🔄 **慢动作回放** - 关键时刻逐帧回放，仲裁争议
-- 📊 **成绩管理** - 支持查询、筛选、导出 Excel
-- 🔗 **多设备同步** - WebSocket 实时同步，房间码配对
-- 📱 **PWA 支持** - 可安装到桌面/手机，离线可用
-- 📤 **CSV 导入** - 批量导入运动员名单
-- 🎥 **录像叠加** - 实时录像，成绩可视化
-
-### 🎨 技术特点
-
-- 🌐 **纯前端实现** - 无需复杂后端，开箱即用
-- 📦 **轻量级部署** - 支持多种部署方式
-- 🔧 **灵活配置** - 道次、距离、灵敏度可调
-- 🌐 **多语言支持** - 中文界面，易于使用
+- **高精度计时**：毫秒级精度，支持电子计时器标准
+- **离线优先**：IndexedDB 本地存储，网络恢复自动同步
+- **响应式设计**：适配手机、平板、电脑各种屏幕
+- **无障碍支持**：完整的 ARIA 标签和键盘导航
 
 ---
 
@@ -67,15 +42,14 @@ AI 发令检测 | 终点自动识别 | 慢动作回放 | 多设备同步
 
 ### 方式一：直接使用（推荐）
 
-直接在浏览器中打开，无需安装：
+访问线上版本：
 
-```
-直接访问: https://boy147258.github.io/jingjitimer/
-```
+| 服务器 | 地址 |
+|--------|------|
+| Railway | https://jingjitimer.onrender.com |
+| Render | https://jingjitimer-render.onrender.com |
 
 ### 方式二：本地部署
-
-#### 使用 Node.js
 
 ```bash
 # 克隆项目
@@ -85,130 +59,139 @@ cd jingjitimer
 # 安装依赖
 npm install
 
-# 启动 WebSocket 服务器
+# 启动服务
 npm start
-
-# 或启动开发服务器（另一个终端）
-npm run dev
+# 或
+node serve.js
 ```
 
-#### 使用 Python
+### 方式三：使用 Python
 
 ```bash
-# 克隆项目
-git clone https://github.com/BOY147258/jingjitimer.git
-cd jingjitimer
-
-# 启动服务器
 python serve.py
-
-# 然后在浏览器打开 http://localhost:8080
 ```
 
-### 方式三：Docker 部署
+---
+
+## 📖 使用指南
+
+### 角色选择
+
+打开应用后，选择设备角色：
+
+| 角色 | 图标 | 用途 |
+|------|------|------|
+| 📱 单机模式 | 一台设备完成所有操作 |
+| 🔫 发令端 | 检测枪声，控制计时开始 |
+| 🏁 终点端 | AI 识别冲线，慢动作回放 |
+| 📋 成绩端 | 实时接收成绩，导出数据 |
+
+### 连接流程
+
+#### 多设备模式
+
+```
+1. 发令端：设置房间码 → 等待连接
+2. 终点端：输入房间码 → 连接发令端
+3. 成绩端：（可选）输入房间码 → 接收成绩
+```
+
+### 比赛操作
+
+#### 发令端
+- **手动发令**：点击按钮或按空格键
+- **枪声发令**：自动检测枪声开始计时
+- **抢跑召回**：检测到抢跑时可召回
+
+#### 终点端
+- 确保摄像头对准终点线
+- AI 自动识别运动员冲线
+- 支持手动补录漏记成绩
+
+### 快捷键
+
+| 按键 | 功能 |
+|------|------|
+| `空格` | 发令/停止 |
+| `1-8` | 选择道次 |
+| `Enter` | 记录成绩 |
+| `Esc` | 取消/返回 |
+| `e` | 导出成绩 |
+| `?` | 显示帮助 |
+
+---
+
+## 🖥️ 部署方式
+
+### 静态部署（推荐）
+
+适用于 Vercel、Netlify、GitHub Pages 等静态托管：
 
 ```bash
-# 构建镜像
-docker build -t jingjitimer .
+# 推送到 GitHub
+git push origin main
 
-# 运行容器
-docker run -d -p 8080:8080 --name jingjitimer jingjitimer
+# 在 Vercel/Netlify 导入即可
 ```
 
-### 方式四：云部署
+### Node.js 部署
 
-#### Deploy to Render
+适用于 Railway、Render、Heroku 等：
+
+```bash
+# 设置环境变量
+export PORT=3000
+
+# 启动
+npm start
+```
+
+### Docker 部署
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --production
+COPY . .
+EXPOSE 3000
+CMD ["node", "serve.js"]
+```
+
+### 一键部署到 Render
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-#### Deploy to Railway
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
+或使用 `render.yaml` 配置文件。
 
 ---
 
-## 📖 功能介绍
+## 📡 API 文档
 
-### 主界面 (index.html)
-
-主计时界面，支持所有角色模式切换：
-
-- 四种模式切换：单机/发令端/终点端/成绩端
-- 基础设置：道次数量、比赛距离、运动员名单
-- 高级选项：发令方式、灵敏度、录像开关
-- 实时控制：发令/开始、停止计时、召回重来
-
-### 管理后台 (admin.html)
-
-成绩管理中心：
-
-- 📈 **数据统计** - 组数、成绩数、房间数统计
-- 🔍 **成绩查询** - 多条件筛选（房间/距离/日期）
-- 📤 **数据导出** - CSV 批量导出
-- 🗑️ **数据管理** - 刷新、清除操作
-
-### 二维码连接 (qrcode.html)
-
-多设备配对工具：
-
-- 生成房间码二维码
-- 扫描连接其他设备
-- 查看连接状态
-
-### 简化版 (simple.html)
-
-轻量级计时界面，适合快速计时场景。
-
-### 启动引导 (starter-flow.html)
-
-新用户引导流程，帮助快速上手。
-
----
-
-## 🌐 部署指南
-
-### 云端部署（无需服务器）
-
-#### GitHub Pages（推荐）
-
-1. Fork 本项目
-2. 进入 Settings → Pages
-3. Source 选择 `main` 分支
-4. 访问 `https://你的用户名.github.io/jingjitimer/`
-
-#### Netlify
-
-1. 注册 [Netlify](https://netlify.com)
-2. New site from Git
-3. 选择本仓库
-4. Deploy
-
-#### Vercel
-
-1. 注册 [Vercel](https://vercel.com)
-2. Import Project
-3. 选择本仓库
-4. Deploy
-
-### 自建服务器
-
-#### 使用已有后端
-
-在 `api.js` 中配置后端地址：
+### WebSocket 消息
 
 ```javascript
-const API_BASE_URL = 'https://你的后端地址.com';
-const WS_URL = 'wss://你的WebSocket地址.com';
+// 连接
+ws://server:port?room={roomCode}&role={role}
+
+// 消息格式
+{
+  type: "START_RACE",
+  payload: { timestamp: 1699999999000 },
+  roomCode: "1234"
+}
 ```
 
-#### 完全自托管
+### REST API
 
-```bash
-# 使用 Node.js
-npm install
-npm start  # WebSocket 服务器
-npm run dev  # HTTP 服务器
-```
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/meets` | GET/POST | 比赛列表/创建比赛 |
+| `/api/events` | GET/POST | 项目列表/创建项目 |
+| `/api/results` | POST | 保存成绩 |
+| `/api/rank` | POST | 排名计算 |
+
+详细文档请查看 [docs/API.md](docs/API.md)
 
 ---
 
@@ -218,68 +201,35 @@ npm run dev  # HTTP 服务器
 
 ```
 jingjitimer/
-├── index.html          # 主界面
-├── admin.html          # 管理后台
-├── qrcode.html         # 二维码连接
-├── simple.html         # 简化版
-├── starter-flow.html   # 启动引导
-├── manifest.json       # PWA 配置
+├── index.html          # 主页面
+├── admin.html          # 管理页面
 ├── sw.js               # Service Worker
+├── manifest.json       # PWA 配置
 │
-├── css/
-│   ├── app.css         # 主样式
-│   └── admin.css       # 管理后台样式
-│
-├── js/
-│   ├── app.js          # 主应用
-│   ├── app-controller.js  # 控制器
+├── js/                 # JavaScript 模块
+│   ├── app.js          # 主应用逻辑
 │   ├── timer.js        # 计时器核心
-│   ├── audio.js        # 音频处理
-│   ├── recorder.js     # 录像功能
-│   ├── finishline.js   # 终点识别
-│   ├── ai-detector.js  # AI 检测
-│   ├── shot-manager.js # 发令管理
-│   ├── sync.js         # 同步模块
-│   ├── sync2.js        # 同步模块 v2
-│   ├── api-client.js   # API 客户端
-│   ├── admin.js        # 管理后台逻辑
-│   └── stats-analyzer.js # 数据分析
+│   ├── audio.js        # 音频检测
+│   ├── recorder.js      # 视频录制
+│   ├── finishline.js   # 终点线检测
+│   ├── sync2.js        # WebSocket 同步
+│   ├── export.js       # 数据导出
+│   ├── i18n.js         # 国际化
+│   ├── idb.js          # IndexedDB
+│   ├── state.js        # 状态管理
+│   ├── storage.js      # 本地存储
+│   ├── ui-helpers.js   # UI 辅助函数
+│   ├── performance.js  # 性能监控
+│   ├── guide.js        # 用户引导
+│   └── types.d.ts      # TypeScript 类型
 │
-├── serve.js            # Node.js HTTP 服务器
-├── ws-server.js        # WebSocket 服务器
-├── db.js               # 数据库模块
-├── api.js              # API 路由
-├── state-machine.js    # 状态机
+├── css/                # 样式文件
+│   └── app.css         # 主样式
 │
-├── icons/              # 图标资源
+├── docs/               # 文档
+│   └── API.md          # API 文档
 │
-├── school-timer/        # 学校计时器模块
-│
-└── docs/               # 文档
-```
-
-### 环境变量
-
-创建 `.env` 文件：
-
-```bash
-# 服务器配置
-PORT=8080
-HOST=0.0.0.0
-
-# 数据库
-DB_PATH=./data/jingjitimer.db
-
-# 日志
-LOG_LEVEL=info
-LOG_FILE=./logs/app.log
-
-# 安全
-CORS_ORIGIN=*
-
-# WebSocket
-WS_PING_INTERVAL=30000
-WS_TIMEOUT=60000
+└── icons/              # 图标资源
 ```
 
 ### 开发命令
@@ -291,236 +241,89 @@ npm install
 # 开发模式
 npm run dev
 
-# 生产模式
-npm start
+# 构建
+npm run build
+
+# 测试
+npm test
 
 # 代码检查
 npm run lint
-
-# 格式化代码
-npm run format
-
-# 运行测试
-npm test
 ```
 
-### API 接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/health` | 健康检查 |
-| GET | `/api/rooms` | 获取所有房间 |
-| GET | `/api/rooms/:id` | 获取房间详情 |
-| POST | `/api/rooms` | 创建房间 |
-| DELETE | `/api/rooms/:id` | 删除房间 |
-| GET | `/api/results` | 获取成绩列表 |
-| GET | `/api/results/:id` | 获取成绩详情 |
-| POST | `/api/results` | 提交成绩 |
-| DELETE | `/api/results/:id` | 删除成绩 |
-| GET | `/api/stats` | 获取统计数据 |
-
-### WebSocket 消息
+### 添加新模块
 
 ```javascript
-// 连接
-ws.on('message', (data) => {
-  const msg = JSON.parse(data);
-  switch (msg.type) {
-    case 'timer:start':
-      // 开始计时
-      break;
-    case 'timer:stop':
-      // 停止计时
-      break;
-    case 'result:update':
-      // 成绩更新
-      break;
-    // ...
-  }
-});
+// 在 app.js 中导入
+import { myModule } from './my-module.js';
+
+// 初始化
+myModule.init();
 ```
 
 ---
 
-## 📊 API 文档
+## 🔧 配置选项
 
-### REST API
+### 环境变量
 
-#### 健康检查
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `PORT` | 3000 | 服务端口 |
+| `WS_PORT` | 3001 | WebSocket 端口 |
+| `CORS_ORIGIN` | * | CORS 允许的域名 |
 
-```http
-GET /api/health
-```
+### 浏览器要求
 
-响应：
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "timestamp": 1234567890
-}
-```
+- Chrome 80+
+- Firefox 75+
+- Safari 14+
+- Edge 80+
 
-#### 获取房间列表
-
-```http
-GET /api/rooms
-```
-
-响应：
-```json
-{
-  "rooms": [
-    {
-      "id": "1234",
-      "name": "比赛A",
-      "status": "active",
-      "createdAt": "2024-01-01T00:00:00Z"
-    }
-  ]
-}
-```
-
-#### 创建房间
-
-```http
-POST /api/rooms
-Content-Type: application/json
-
-{
-  "name": "比赛A",
-  "lanes": 8,
-  "distance": "100m"
-}
-```
-
-#### 提交成绩
-
-```http
-POST /api/results
-Content-Type: application/json
-
-{
-  "roomId": "1234",
-  "lane": 1,
-  "time": 12.345,
-  "athlete": "张三",
-  "distance": "100m"
-}
-```
-
-#### 导出成绩
-
-```http
-GET /api/results/export?roomId=1234&format=csv
-```
-
-### WebSocket API
-
-#### 连接
-
-```javascript
-const ws = new WebSocket('wss://your-server.com/ws');
-```
-
-#### 发送消息
-
-```javascript
-// 发送计时开始
-ws.send(JSON.stringify({
-  type: 'timer:start',
-  roomId: '1234',
-  timestamp: Date.now()
-}));
-
-// 发送成绩
-ws.send(JSON.stringify({
-  type: 'result:add',
-  roomId: '1234',
-  lane: 1,
-  time: 12.345
-}));
-```
-
-#### 接收消息
-
-```javascript
-ws.addEventListener('message', (event) => {
-  const data = JSON.parse(event.data);
-  switch (data.type) {
-    case 'timer:state':
-      updateTimerUI(data.state);
-      break;
-    case 'result:new':
-      addResultRow(data.result);
-      break;
-    case 'sync:request':
-      handleSyncRequest();
-      break;
-  }
-});
-```
+需要支持：
+- WebSocket
+- MediaDevices API
+- IndexedDB
+- Service Worker
 
 ---
 
-## 📝 更新日志
+## ❓ 常见问题
 
-### [1.0.0] - 2024-XX-XX
+### Q: 枪声检测不灵敏？
 
-#### 新增
-- 四大角色模式支持
-- AI 发令检测功能
-- 终点自动识别
-- 慢动作回放
-- PWA 离线支持
-- 多设备 WebSocket 同步
-- 成绩导出功能
+A: 确保麦克风权限已授权，尝试靠近音源或调整灵敏度设置。
 
-#### 改进
-- UI 界面优化
-- 性能提升
-- 稳定性增强
+### Q: 终点线识别有误？
 
----
+A: 检查摄像头角度，确保光线充足，可在设置中调整检测区域。
 
-## 🤝 贡献指南
+### Q: 多设备连接失败？
 
-欢迎提交 Issue 和 Pull Request！
+A: 检查网络连接，确认房间码一致，防火墙未阻止 WebSocket 端口。
 
-### 开发流程
+### Q: 离线时数据会丢失吗？
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+A: 不会。数据会自动保存到 IndexedDB，网络恢复后自动同步。
 
-### 代码规范
+### Q: 如何导出成绩？
 
-- 使用 ESLint 进行代码检查
-- 使用 Prettier 格式化代码
-- 提交信息遵循 Conventional Commits 规范
+A: 在成绩页面点击导出按钮，选择 CSV/Excel/PDF 格式。
 
 ---
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
----
+MIT License
 
 ## 🙏 致谢
 
-- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) - 轻量级 SQLite 数据库
-- [ws](https://github.com/websockets/ws) - WebSocket 实现
-- 所有贡献者的辛勤付出
+- 图标来源：[Emoji](https://emojipedia.org/)
+- 计时精度：[performance.now()](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now)
+- 设计参考：[Apple Human Interface Guidelines](https://developer.apple.com/design/)
 
 ---
 
-<div align="center">
-
-**Made with ❤️ for athletics timing**
-
-**竞迹，让计时更精准**
-
-</div>
+<p align="center">
+  <strong>竞迹计时器</strong> - 让每一次冲线都有精准记录
+</p>

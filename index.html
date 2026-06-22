@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<a href="#main-content" class="skip-link">跳过导航，直接进入主内容</a>
 <div id="app">
 
   <!-- ── Loading ─────────────────────────────────────── -->
@@ -35,7 +36,7 @@
       <div class="role-header" style="font-size:26px;font-weight:800;color:#ff6200;letter-spacing:3px">竞迹</div>
       <div class="role-sub">选择设备角色</div>
 
-      <button class="role-btn" id="btn-role-solo">
+      <button class="role-btn" id="btn-role-solo" aria-label="单机模式">
         <div class="role-icon">📱</div>
         <div class="role-info">
           <div class="role-name">单机模式</div>
@@ -43,7 +44,7 @@
         </div>
       </button>
 
-      <button class="role-btn" id="btn-role-start">
+      <button class="role-btn" id="btn-role-start" aria-label="发令端">
         <div class="role-icon">🔫</div>
         <div class="role-info">
           <div class="role-name">发令端</div>
@@ -51,7 +52,7 @@
         </div>
       </button>
 
-      <button class="role-btn" id="btn-role-finish">
+      <button class="role-btn" id="btn-role-finish" aria-label="终点端">
         <div class="role-icon">🏁</div>
         <div class="role-info">
           <div class="role-name">终点端</div>
@@ -59,7 +60,7 @@
         </div>
       </button>
 
-      <button class="role-btn" id="btn-role-observer">
+      <button class="role-btn" id="btn-role-observer" aria-label="成绩端">
         <div class="role-icon">📋</div>
         <div class="role-info">
           <div class="role-name">成绩端</div>
@@ -73,45 +74,55 @@
 
         <!-- Start device: set own room code -->
         <div id="room-code-set-wrap" class="hidden">
-          <label class="room-label">设置房间码<span class="room-label-hint">（4位，告知所有终点端）</span></label>
+          <label class="room-label" for="room-code-set">设置房间码<span class="room-label-hint">（4位，告知所有终点端）</span></label>
           <div class="room-code-set-row">
             <input type="text" id="room-code-set" class="room-code-input" maxlength="6"
-              placeholder="自定义" inputmode="numeric" pattern="[0-9]*">
-            <button id="btn-room-suggest" class="btn btn-ghost btn-sm">随机</button>
+              placeholder="自定义" inputmode="numeric" pattern="[0-9]*"
+              aria-describedby="room-code-set-hint">
+            <span id="room-code-set-hint" class="sr-only">输入4-6位数字作为房间码</span>
+            <button id="btn-room-suggest" class="btn btn-ghost btn-sm" aria-label="随机生成房间码">随机</button>
           </div>
         </div>
 
         <!-- Finish device: enter room code -->
         <div id="room-code-input-wrap" class="hidden">
-          <label class="room-label">输入发令端房间码</label>
+          <label class="room-label" for="room-code-input">输入发令端房间码</label>
           <input type="text" id="room-code-input" class="room-code-input" maxlength="6"
-            placeholder="与发令端相同" inputmode="numeric" pattern="[0-9]*">
+            placeholder="与发令端相同" inputmode="numeric" pattern="[0-9]*"
+            aria-describedby="room-code-input-hint">
+          <span id="room-code-input-hint" class="sr-only">输入与发令端相同的4-6位房间码进行连接</span>
         </div>
 
         <!-- 服务器地址（高级，默认填好，不懂的不用改） -->
         <details class="server-url-details" id="server-details">
-          <summary class="server-url-summary">服务器地址 ▸</summary>
+          <summary class="server-url-summary" aria-label="展开或收起服务器地址设置">服务器地址 ▸</summary>
           <div class="server-presets">
             <label class="server-preset-label">快速选择：</label>
-            <button class="server-preset-btn" data-server="">自动检测</button>
-            <button class="server-preset-btn" data-server="jingjitimer.onrender.com">Railway</button>
-            <button class="server-preset-btn" data-server="jingjitimer-render.onrender.com">Render</button>
+            <button class="server-preset-btn" data-server="" aria-label="自动检测服务器">自动检测</button>
+            <button class="server-preset-btn" data-server="jingjitimer.onrender.com" aria-label="使用 Railway 服务器">Railway</button>
+            <button class="server-preset-btn" data-server="jingjitimer-render.onrender.com" aria-label="使用 Render 服务器">Render</button>
           </div>
           <input type="text" id="server-url-input" class="room-code-input"
             style="width:100%;margin-top:6px;font-size:12px"
             placeholder="例：jingjitimer.onrender.com"
-            value="">
+            value=""
+            aria-label="服务器地址"
+            aria-describedby="server-url-hint">
           <div class="server-url-hint">
             <span>留空使用当前地址</span>
             <span class="server-current" id="server-current"></span>
           </div>
         </details>
 
-        <div id="room-status" class="room-status">未连接</div>
-        <button id="btn-connect" class="btn btn-primary btn-full mt-8">连接到比赛</button>
+        <div id="room-status" class="room-status" aria-live="polite" role="status">未连接</div>
+        <!-- 房间锁定状态指示器 -->
+        <div id="room-lock-indicator" class="room-lock-indicator hidden">
+          <span class="lock-icon">&#128274;</span> <span class="lock-text">房间已锁定</span>
+        </div>
+        <button id="btn-connect" class="btn btn-primary btn-full mt-8" aria-label="连接到比赛房间">连接到比赛</button>
       </div>
 
-      <button id="btn-role-confirm" class="btn btn-primary btn-full btn-large mt-12 hidden">
+      <button id="btn-role-confirm" class="btn btn-primary btn-full btn-large mt-12 hidden" aria-label="确认选择的设备角色">
         确认 →
       </button>
     </div>
@@ -125,9 +136,9 @@
       <h2>正在请求权限</h2>
       <p>请在弹窗中点击<b>允许</b>，授权摄像头和麦克风</p>
       <p style="margin-top:8px;font-size:12px;color:#555">iOS用Safari，安卓用Chrome</p>
-      <button id="btn-grant-all" class="btn btn-primary btn-large mt-16">重新请求权限</button>
-      <button id="btn-skip-perm" class="btn btn-ghost mt-8">跳过（仅手动计时）</button>
-      <button id="btn-grant-mic" class="btn btn-ghost mt-4" style="display:none"></button>
+      <button id="btn-grant-all" class="btn btn-primary btn-large mt-16" aria-label="重新请求摄像头和麦克风权限">重新请求权限</button>
+      <button id="btn-skip-perm" class="btn btn-ghost mt-8" aria-label="跳过权限请求，仅使用手动计时">跳过（仅手动计时）</button>
+      <button id="btn-grant-mic" class="btn btn-ghost mt-4" style="display:none" aria-label="仅请求麦克风权限"></button>
     </div>
   </div>
 
@@ -149,11 +160,11 @@
   </header>
 
   <!-- ── Tab Bar (start/solo) ─────────────────────────── -->
-  <nav class="tab-bar" id="tab-bar-start">
-    <button class="tab-btn tab-btn-home" id="btn-go-home" title="返回主页">⌂</button>
-    <button class="tab-btn active" data-tab="setup">⚙️ 设置</button>
-    <button class="tab-btn" data-tab="race">🏁 比赛</button>
-    <button class="tab-btn" data-tab="results">📊 成绩</button>
+  <nav class="tab-bar" id="tab-bar-start" role="tablist" aria-label="主要功能导航">
+    <button class="tab-btn tab-btn-home" id="btn-go-home" title="返回主页" aria-label="返回主页">⌂</button>
+    <button class="tab-btn active" data-tab="setup" role="tab" aria-selected="true" aria-label="设置">⚙️ 设置</button>
+    <button class="tab-btn" data-tab="race" role="tab" aria-selected="false" aria-label="比赛">🏁 比赛</button>
+    <button class="tab-btn" data-tab="results" role="tab" aria-selected="false" aria-label="成绩">📊 成绩</button>
   </nav>
 
   <!-- Finish device: no tab bar, just fullscreen -->
@@ -165,28 +176,40 @@
   <!-- ── Setup Tab ────────────────────────────────────── -->
   <section class="tab-pane" id="tab-setup">
 
+    <!-- 👨‍🏫 教师快速开始区域 -->
+    <div class="teacher-quick-start">
+      <div class="tqs-header">👨‍🏫 教师快速开始</div>
+      <div class="tqs-buttons">
+        <button class="tqs-btn" id="btn-quick-50m" aria-label="快速开始50米比赛">🏃 50m</button>
+        <button class="tqs-btn" id="btn-quick-100m" aria-label="快速开始100米比赛">🏃 100m</button>
+        <button class="tqs-btn" id="btn-quick-200m" aria-label="快速开始200米比赛">🏃 200m</button>
+        <button class="tqs-btn" id="btn-quick-400m" aria-label="快速开始400米比赛">🏃 400m</button>
+      </div>
+      <div class="tqs-hint">点击即可快速设置并跳转到比赛页面</div>
+    </div>
+
     <!-- ① 核心：道数 + 距离 -->
     <div class="setup-core-card">
       <div class="core-row">
         <div class="core-field">
           <div class="core-label">参赛道次</div>
           <div class="stepper stepper-lg">
-            <button class="step-btn" id="btn-lane-minus">−</button>
-            <span id="lane-count-display">4</span>
-            <button class="step-btn" id="btn-lane-plus">+</button>
+            <button class="step-btn" id="btn-lane-minus" aria-label="减少参赛道次">−</button>
+            <span id="lane-count-display" aria-live="polite">4</span>
+            <button class="step-btn" id="btn-lane-plus" aria-label="增加参赛道次">+</button>
           </div>
-          <button class="btn-lane-auto" id="btn-auto-detect-lanes">🔍 自动识别</button>
+          <button class="btn-lane-auto" id="btn-auto-detect-lanes" aria-label="自动识别跑道数量">🔍 自动识别</button>
           <!-- Sync status with finish device — hidden until finish device reports -->
           <div class="lane-sync-row hidden" id="lane-sync-row">
             <span class="lane-sync-icon" id="lane-sync-icon">✅</span>
             <span class="lane-sync-text" id="lane-sync-text"></span>
-            <button class="btn-lane-sync-adopt hidden" id="btn-lane-sync-adopt"></button>
+            <button class="btn-lane-sync-adopt hidden" id="btn-lane-sync-adopt" aria-label="采用终点端识别的道次数"></button>
           </div>
         </div>
         <div class="core-divider"></div>
         <div class="core-field">
           <div class="core-label">比赛距离</div>
-          <select id="race-distance" class="dist-select">
+          <select id="race-distance" class="dist-select" aria-label="选择比赛距离">
             <option value="50">50 m</option>
             <option value="60">60 m</option>
             <option value="80">80 m</option>
@@ -201,8 +224,9 @@
         </div>
       </div>
       <div class="form-row hidden" id="custom-dist-row" style="margin-top:10px">
-        <label>自定义 (m)</label>
-        <input type="number" id="custom-dist-input" min="1" max="20000" placeholder="例：3000" style="width:110px;flex:none">
+        <label for="custom-dist-input">自定义 (m)</label>
+        <input type="number" id="custom-dist-input" min="1" max="20000" placeholder="例：3000" style="width:110px;flex:none"
+          aria-label="自定义比赛距离，单位米">
       </div>
     </div>
 
@@ -210,7 +234,7 @@
     <div class="card" id="card-athletes">
       <div class="card-title-row">
         <div class="card-title">运动员名单</div>
-        <button class="btn-roster-import" id="btn-roster-import">📋 导入</button>
+        <button class="btn-roster-import" id="btn-roster-import" aria-label="导入运动员名单">📋 导入</button>
       </div>
       <div id="lane-inputs"></div>
       <input type="file" id="roster-file-input" accept=".csv,.txt" style="display:none">
@@ -220,43 +244,43 @@
     <div class="quick-templates" id="quick-templates">
       <div class="qt-title">🏃 快速模板</div>
       <div class="qt-grid">
-        <button class="qt-btn" data-distance="50" data-lanes="4">50m短跑</button>
-        <button class="qt-btn" data-distance="100" data-lanes="4">100m</button>
-        <button class="qt-btn" data-distance="200" data-lanes="4">200m</button>
-        <button class="qt-btn" data-distance="400" data-lanes="4">400m</button>
-        <button class="qt-btn" data-distance="800" data-lanes="6">800m中跑</button>
-        <button class="qt-btn" data-distance="1500" data-lanes="6">1500m长跑</button>
+        <button class="qt-btn" data-distance="50" data-lanes="4" aria-label="50米短跑模板，4条跑道">50m短跑</button>
+        <button class="qt-btn" data-distance="100" data-lanes="4" aria-label="100米短跑模板，4条跑道">100m</button>
+        <button class="qt-btn" data-distance="200" data-lanes="4" aria-label="200米短跑模板，4条跑道">200m</button>
+        <button class="qt-btn" data-distance="400" data-lanes="4" aria-label="400米短跑模板，4条跑道">400m</button>
+        <button class="qt-btn" data-distance="800" data-lanes="6" aria-label="800米中跑模板，6条跑道">800m中跑</button>
+        <button class="qt-btn" data-distance="1500" data-lanes="6" aria-label="1500米长跑模板，6条跑道">1500m长跑</button>
       </div>
     </div>
 
     <!-- ③ 高级选项（折叠） -->
-    <details class="advanced-details">
-      <summary class="advanced-summary">高级选项 ▸</summary>
+    <details class="advanced-details" id="advanced-options">
+      <summary class="advanced-summary" aria-label="展开或收起高级选项设置">高级选项 ▸</summary>
       <div class="advanced-body">
 
         <div class="form-row">
-          <label>学校 / 组织</label>
-          <input type="text" id="org-name" placeholder="如：XX中学">
+          <label for="org-name">学校 / 组织</label>
+          <input type="text" id="org-name" placeholder="如：XX中学" aria-label="输入学校或组织名称">
         </div>
         <div class="form-row">
-          <label>比赛名称</label>
-          <input type="text" id="race-name" value="田径比赛" placeholder="如：100米预赛">
+          <label for="race-name">比赛名称</label>
+          <input type="text" id="race-name" value="田径比赛" placeholder="如：100米预赛" aria-label="输入比赛名称">
         </div>
         <div class="form-row">
           <label>轮次 / 组别</label>
           <div class="round-group-row">
             <div class="rg-item">
               <span class="rg-label">第</span>
-              <button class="step-btn" id="btn-round-minus">−</button>
-              <span id="round-display">1</span>
-              <button class="step-btn" id="btn-round-plus">+</button>
+              <button class="step-btn" id="btn-round-minus" aria-label="减少轮次">−</button>
+              <span id="round-display" aria-live="polite">1</span>
+              <button class="step-btn" id="btn-round-plus" aria-label="增加轮次">+</button>
               <span class="rg-label">轮</span>
             </div>
             <div class="rg-item">
               <span class="rg-label">第</span>
-              <button class="step-btn" id="btn-group-minus">−</button>
-              <span id="group-display">1</span>
-              <button class="step-btn" id="btn-group-plus">+</button>
+              <button class="step-btn" id="btn-group-minus" aria-label="减少组别">−</button>
+              <span id="group-display" aria-live="polite">1</span>
+              <button class="step-btn" id="btn-group-plus" aria-label="增加组别">+</button>
               <span class="rg-label">组</span>
             </div>
           </div>
@@ -264,22 +288,23 @@
         <div class="form-row">
           <label>跑道长度</label>
           <div class="track-len-toggle">
-            <button class="track-len-btn" id="btn-track-200">200 m</button>
-            <button class="track-len-btn active" id="btn-track-400">400 m</button>
+            <button class="track-len-btn" id="btn-track-200" aria-label="选择200米跑道">200 m</button>
+            <button class="track-len-btn active" id="btn-track-400" aria-label="选择400米标准跑道">400 m</button>
           </div>
         </div>
         <div class="form-row">
           <label>所需圈数</label>
           <div class="stepper">
-            <button class="step-btn" id="btn-lap-minus">−</button>
-            <span id="lap-count-display">1</span>
-            <button class="step-btn" id="btn-lap-plus">+</button>
+            <button class="step-btn" id="btn-lap-minus" aria-label="减少所需圈数">−</button>
+            <span id="lap-count-display" aria-live="polite">1</span>
+            <button class="step-btn" id="btn-lap-plus" aria-label="增加所需圈数">+</button>
           </div>
         </div>
 
         <!-- 发令方式 -->
         <div class="adv-section-title">发令方式</div>
-        <div class="radio-group">
+        <fieldset class="radio-group" role="radiogroup" aria-label="选择发令方式">
+          <legend class="sr-only">发令方式</legend>
           <label class="radio-opt">
             <input type="radio" name="start-mode" value="manual" checked>
             <div class="radio-body">
@@ -297,9 +322,10 @@
         </div>
         <div id="audio-sens-panel" class="hidden mt-12">
           <div class="form-row">
-            <label>灵敏度 <b id="sens-val">75</b>%</label>
-            <input type="range" id="sensitivity" min="5" max="98" value="75" class="slider">
-          </div>
+          <label for="sensitivity">灵敏度 <b id="sens-val">75</b>%</label>
+          <input type="range" id="sensitivity" min="5" max="98" value="75" class="slider"
+            aria-valuemin="5" aria-valuemax="98" aria-valuenow="75" aria-label="枪声检测灵敏度">
+        </div>
           <div class="audio-monitor-box">
             <div class="monitor-label">实时音量监测</div>
             <div class="level-track">
@@ -320,14 +346,15 @@
           </label>
         </div>
         <div id="cam-preview-box" class="cam-preview-box mt-12">
-          <video id="setup-video" autoplay muted playsinline class="preview-video"></video>
-          <div id="cam-placeholder" class="cam-placeholder">📹<br><span>摄像头预览</span></div>
+          <video id="setup-video" autoplay muted playsinline class="preview-video" aria-label="摄像头预览画面"></video>
+          <div id="cam-placeholder" class="cam-placeholder" aria-label="摄像头未激活或被禁用">📹<br><span>摄像头预览</span></div>
+          <span class="sr-only">比赛录像的实时预览画面，用于确认摄像头位置是否正确对准终点线</span>
         </div>
-        <button id="btn-flip-cam" class="btn btn-ghost btn-sm mt-8 hidden">🔄 切换前/后摄像头</button>
+        <button id="btn-flip-cam" class="btn btn-ghost btn-sm mt-8 hidden" aria-label="切换前后摄像头">🔄 切换前/后摄像头</button>
       </div>
     </details>
 
-    <button id="btn-enter-race" class="btn btn-primary btn-full btn-large">开始比赛 →</button>
+    <button id="btn-enter-race" class="btn btn-primary btn-full btn-large" aria-label="开始比赛，进入比赛界面">开始比赛 →</button>
 
     <!-- 练习模式 -->
     <div class="practice-mode-card" id="practice-mode-card">
@@ -336,7 +363,7 @@
         <span class="practice-title">赛前练习</span>
       </div>
       <div class="practice-desc">在正式比赛前进行测试，熟悉发令和计时流程</div>
-      <button id="btn-practice-mode" class="btn btn-secondary btn-full mt-8">
+      <button id="btn-practice-mode" class="btn btn-secondary btn-full mt-8" aria-label="进入赛前练习模式">
         🔔 进入练习模式
       </button>
     </div>
@@ -345,15 +372,16 @@
   <!-- ── Race Tab ──────────────────────────────────────── -->
   <section class="tab-pane hidden" id="tab-race">
     <div class="race-cam-wrap">
-      <video id="race-video" autoplay muted playsinline class="race-video"></video>
-      <canvas id="race-canvas" class="race-canvas"></canvas>
-      <div id="rec-badge" class="rec-badge hidden">● REC</div>
-      <div id="cam-off-msg" class="cam-off-msg">📹 录像未启用</div>
+      <video id="race-video" autoplay muted playsinline class="race-video" aria-label="比赛录像画面"></video>
+      <canvas id="race-canvas" class="race-canvas" aria-label="终点线检测画布"></canvas>
+      <div id="rec-badge" class="rec-badge hidden" aria-live="polite">● REC</div>
+      <div id="cam-off-msg" class="cam-off-msg" aria-label="摄像头未启用提示">📹 录像未启用</div>
+      <span class="sr-only">比赛进行中的实时录像画面，显示终点线检测状态</span>
     </div>
 
     <div class="timer-wrap">
-      <div id="timer-display" class="timer-display">00:00.00</div>
-      <div id="timer-sub" class="timer-sub">准备就绪</div>
+      <div id="timer-display" class="timer-display" role="timer" aria-live="polite" aria-label="当前计时时间，当前值 00 分 00 秒 00 毫秒">00:00.00</div>
+      <div id="timer-sub" class="timer-sub" aria-live="polite" aria-label="计时器状态提示">准备就绪</div>
     </div>
 
     <div id="visualizer-wrap" class="visualizer-wrap hidden">
@@ -363,17 +391,17 @@
 
     <div class="race-ctrl">
       <!-- 独立发令按钮组 -->
-      <div class="starter-buttons">
-        <button id="btn-gejiuwei" class="btn btn-gejiuwei">📢 各就位</button>
-        <button id="btn-yubei" class="btn btn-yubei">⚡ 预备</button>
-        <button id="btn-gunshot" class="btn btn-gunshot">🔫 枪声</button>
+      <div class="starter-buttons" role="group" aria-label="发令按钮组">
+        <button id="btn-gejiuwei" class="btn btn-gejiuwei" aria-label="各就位">📢 各就位</button>
+        <button id="btn-yubei" class="btn btn-yubei" aria-label="预备">⚡ 预备</button>
+        <button id="btn-gunshot" class="btn btn-gunshot" aria-label="枪声">🔫 枪声</button>
       </div>
-      <div class="starter-divider">━━━━━━━━━━ 或 ━━━━━━━━━━</div>
-      <button id="btn-race-start" class="btn btn-start">🚀 发令 / 开始</button>
+      <div class="starter-divider" aria-hidden="true">━━━━━━━━━━ 或 ━━━━━━━━━━</div>
+      <button id="btn-race-start" class="btn btn-start" aria-label="发令开始">🚀 发令 / 开始</button>
       <div class="ctrl-row">
-        <button id="btn-race-stop"   class="btn btn-stop hidden">⏹ 停止计时</button>
-        <button id="btn-race-abort"  class="btn btn-abort hidden">⚠️ 召回重来</button>
-        <button id="btn-race-reset"  class="btn btn-reset">↺ 重置</button>
+        <button id="btn-race-stop"   class="btn btn-stop hidden" aria-label="停止计时">⏹ 停止计时</button>
+        <button id="btn-race-abort"  class="btn btn-abort hidden" aria-label="召回重来">⚠️ 召回重来</button>
+        <button id="btn-race-reset"  class="btn btn-reset" aria-label="重置">↺ 重置</button>
       </div>
     </div>
 
@@ -385,8 +413,8 @@
         <div class="cf-info" id="cf-info">差距 XXXms，请确认名次</div>
         <div class="cf-lanes" id="cf-lanes"></div>
         <div class="cf-actions">
-          <button class="btn btn-start cf-btn" id="cf-confirm">✔ 保持当前顺序</button>
-          <button class="btn btn-secondary cf-btn" id="cf-swap">↔ 交换名次</button>
+          <button id="cf-confirm" class="btn btn-start cf-btn" aria-label="保持当前名次顺序">✔ 保持当前顺序</button>
+        <button id="cf-swap" class="btn btn-secondary cf-btn" aria-label="交换名次">↔ 交换名次</button>
         </div>
       </div>
     </div>
@@ -404,13 +432,16 @@
 
     <div id="video-replay-card" class="card hidden">
       <div class="card-title">📹 比赛回放</div>
-      <video id="replay-video" controls class="replay-video"></video>
-      <button id="btn-dl-video" class="btn btn-secondary btn-full mt-8">⬇️ 下载视频</button>
+      <video id="replay-video" controls class="replay-video" aria-label="比赛录像回放"></video>
+      <button id="btn-dl-video" class="btn btn-secondary btn-full mt-8" aria-label="下载比赛视频">⬇️ 下载视频</button>
     </div>
 
     <div class="card-actions">
-      <button id="btn-export-csv" class="btn btn-secondary">📊 导出 Excel 成绩单</button>
-      <button id="btn-clear-results" class="btn btn-danger">🗑️ 清除</button>
+      <button id="btn-export-csv" class="btn btn-secondary" aria-label="导出CSV成绩单">📄 CSV</button>
+      <button id="btn-export-xlsx" class="btn btn-secondary" aria-label="导出Excel成绩单">📊 Excel</button>
+      <button id="btn-export-pdf" class="btn btn-secondary" aria-label="导出PDF成绩单">📑 PDF</button>
+      <button id="btn-batch-export" class="btn btn-secondary" aria-label="批量导出">📦 批量</button>
+      <button id="btn-clear-results" class="btn btn-danger" aria-label="清除成绩">🗑️ 清除</button>
     </div>
 
     <div class="card">
@@ -422,7 +453,7 @@
     <div class="card" id="trend-card">
       <div class="card-title-row">
         <div class="card-title">📈 成绩趋势</div>
-        <button class="btn btn-ghost btn-sm" id="btn-toggle-trend">切换视图</button>
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-trend" aria-label="切换成绩趋势图表视图">切换视图</button>
       </div>
       <div class="trend-chart-wrap">
         <canvas id="trend-canvas" width="360" height="160"></canvas>
@@ -444,7 +475,7 @@
       <div class="trend-empty" id="trend-empty">暂无足够数据展示趋势</div>
     </div>
 
-    <a href="admin.html" class="admin-link">📊 打开成绩管理后台（可用浏览器返回键回来）</a>
+    <a href="admin.html" class="admin-link" aria-label="在新页面打开成绩管理后台，可使用浏览器返回键返回">📊 打开成绩管理后台（可用浏览器返回键回来）</a>
   </section>
 
   <!-- ════════════════════════════════════════════════════
@@ -453,7 +484,7 @@
   <section class="fs-finish hidden" id="tab-finish-main">
 
     <!-- Fullscreen camera feed -->
-    <video id="finish-video-fs" autoplay muted playsinline class="fs-video"></video>
+    <video id="finish-video-fs" autoplay muted playsinline class="fs-video" aria-label="终点摄像头实时画面"></video>
 
     <!-- Finish line detection overlay (draggable) -->
     <canvas id="finish-canvas-fs" class="fs-canvas"></canvas>
@@ -474,7 +505,7 @@
 
     <!-- Auto-detect lanes floating button (visible when camera ready, hidden during race) -->
     <div class="fs-auto-pill hidden" id="fs-auto-pill">
-      <button class="fs-auto-pill-btn" id="btn-fs-auto-lanes-main">🔍 自动识别道次</button>
+      <button class="fs-auto-pill-btn" id="btn-fs-auto-lanes-main" aria-label="自动识别跑道数量和位置">🔍 自动识别道次</button>
     </div>
 
     <!-- Right-side result cards (slide in as athletes cross) -->
@@ -489,8 +520,8 @@
         <div class="fs-end-title">比赛结束</div>
         <div class="fs-end-list" id="fs-end-list"></div>
         <div class="fs-end-actions">
-          <button id="btn-fs-next-group" class="btn btn-primary">下一组</button>
-          <button id="btn-fs-download"   class="btn btn-secondary">下载视频</button>
+          <button id="btn-fs-next-group" class="btn btn-primary" aria-label="进入下一组比赛">下一组</button>
+          <button id="btn-fs-download"   class="btn btn-secondary" aria-label="下载比赛视频">下载视频</button>
         </div>
       </div>
     </div>
@@ -500,15 +531,16 @@
       <div class="fs-panel-handle"></div>
       <div class="fs-panel-title">检测设置</div>
       <div class="form-row">
-        <label>灵敏度 <b id="fs-sens-val">50</b></label>
-        <input type="range" id="fs-sensitivity" min="5" max="80" value="20" class="slider">
-      </div>
+          <label for="fs-sensitivity">灵敏度 <b id="fs-sens-val">50</b></label>
+          <input type="range" id="fs-sensitivity" min="5" max="80" value="20" class="slider"
+            aria-valuemin="5" aria-valuemax="80" aria-valuenow="20" aria-label="终点线检测灵敏度">
+        </div>
       <div class="form-row">
         <label>性能模式</label>
         <div class="perf-mode-toggle">
-          <button class="perf-mode-btn" data-mode="high" title="最高精度，旗舰手机">🚀 高</button>
-          <button class="perf-mode-btn active" data-mode="balanced" title="平衡模式，中端手机">⚖️ 中</button>
-          <button class="perf-mode-btn" data-mode="low" title="省电模式，低端设备">🔋 低</button>
+          <button class="perf-mode-btn" data-mode="high" title="最高精度，旗舰手机" aria-label="高性能模式">🚀 高</button>
+          <button class="perf-mode-btn active" data-mode="balanced" title="平衡模式，中端手机" aria-label="平衡模式">⚖️ 中</button>
+          <button class="perf-mode-btn" data-mode="low" title="省电模式，低端设备" aria-label="省电模式">🔋 低</button>
         </div>
       </div>
       <div class="perf-stats-row hidden" id="fs-perf-stats">
@@ -522,11 +554,11 @@
         </div>
         <div class="monitor-hint" id="fs-detect-status">等待摄像头...</div>
       </div>
-      <button id="btn-fs-flip" class="btn btn-ghost btn-sm mt-8" style="width:100%">🔄 切换前/后摄像头</button>
-      <button id="btn-fs-auto-lanes"  class="btn btn-ghost btn-sm mt-8" style="width:100%">🔍 自动识别道次</button>
-      <button id="btn-fs-reset-lanes" class="btn btn-ghost btn-sm mt-4" style="width:100%">⊟ 重置道次分界线</button>
-      <button id="btn-fs-guide" class="btn btn-ghost btn-sm mt-4" style="width:100%">📖 机位使用说明</button>
-      <button id="btn-fs-settings-close" class="btn btn-ghost mt-8" style="width:100%">关闭</button>
+      <button id="btn-fs-flip" class="btn btn-ghost btn-sm mt-8" style="width:100%" aria-label="切换前后摄像头">🔄 切换前/后摄像头</button>
+      <button id="btn-fs-auto-lanes"  class="btn btn-ghost btn-sm mt-8" style="width:100%" aria-label="自动识别跑道分界线">🔍 自动识别道次</button>
+      <button id="btn-fs-reset-lanes" class="btn btn-ghost btn-sm mt-4" style="width:100%" aria-label="重置跑道分界线为均等间距">⊟ 重置道次分界线</button>
+      <button id="btn-fs-guide" class="btn btn-ghost btn-sm mt-4" style="width:100%" aria-label="查看终点摄像头使用说明">📖 机位使用说明</button>
+      <button id="btn-fs-settings-close" class="btn btn-ghost mt-8" style="width:100%" aria-label="关闭设置面板">关闭</button>
     </div>
 
   </section>
@@ -545,8 +577,8 @@
       </div>
       <div class="obs-topbar-right">
         <span id="obs-room-badge" class="obs-room-badge"></span>
-        <button id="btn-obs-export" class="btn btn-secondary btn-sm" disabled>📊 导出 Excel</button>
-        <button id="btn-obs-home" class="btn btn-ghost btn-sm" style="padding:0 10px">⌂</button>
+        <button id="btn-obs-export" class="btn btn-secondary btn-sm" disabled aria-label="导出比赛成绩到Excel文件">📊 导出 Excel</button>
+        <button id="btn-obs-home" class="btn btn-ghost btn-sm" style="padding:0 10px" aria-label="返回主页">⌂</button>
       </div>
     </div>
 
@@ -569,7 +601,7 @@
   <!-- ── Usage Guide Modal ─────────────────────────────── -->
   <div id="guide-overlay" class="guide-overlay hidden">
     <div class="guide-card">
-      <button class="guide-close" id="btn-guide-close">✕</button>
+      <button class="guide-close" id="btn-guide-close" aria-label="关闭使用说明">✕</button>
       <div class="guide-title">📖 竞迹使用说明</div>
 
       <div class="guide-section">
@@ -635,14 +667,14 @@
         </ol>
       </div>
 
-      <button class="btn btn-primary mt-16" id="btn-guide-ok" style="width:100%">明白了</button>
+      <button class="btn btn-primary mt-16" id="btn-guide-ok" style="width:100%" aria-label="关闭使用说明对话框">明白了</button>
     </div>
   </div>
 
   <!-- ── Device Diagnostic Modal ─────────────────────── -->
   <div id="diagnostic-overlay" class="guide-overlay hidden">
     <div class="guide-card" style="max-width:480px">
-      <button class="guide-close" id="btn-diagnostic-close">✕</button>
+      <button class="guide-close" id="btn-diagnostic-close" aria-label="关闭设备诊断对话框">✕</button>
       <div class="guide-title">🔧 设备诊断</div>
 
       <div class="guide-section">
@@ -669,17 +701,17 @@
 
       <div class="guide-section">
         <div class="guide-sec-title">🎥 摄像头检测</div>
-        <div class="diag-status" id="diag-cam-status">点击下方按钮开始检测</div>
-        <button id="btn-test-cam" class="btn btn-secondary btn-full mt-8">🔍 测试摄像头</button>
+        <div class="diag-status" id="diag-cam-status" aria-live="polite">点击下方按钮开始检测</div>
+        <button id="btn-test-cam" class="btn btn-secondary btn-full mt-8" aria-label="启动摄像头并显示预览画面">🔍 测试摄像头</button>
         <div id="diag-cam-preview" class="diag-preview hidden">
-          <video id="diag-cam-video" autoplay muted playsinline></video>
+          <video id="diag-cam-video" autoplay muted playsinline aria-label="摄像头测试预览"></video>
         </div>
       </div>
 
       <div class="guide-section">
         <div class="guide-sec-title">🎤 麦克风检测</div>
-        <div class="diag-status" id="diag-mic-status">点击下方按钮开始检测</div>
-        <button id="btn-test-mic" class="btn btn-secondary btn-full mt-8">🎤 测试麦克风</button>
+        <div class="diag-status" id="diag-mic-status" aria-live="polite">点击下方按钮开始检测</div>
+        <button id="btn-test-mic" class="btn btn-secondary btn-full mt-8" aria-label="启动麦克风并显示音量波形">🎤 测试麦克风</button>
         <div id="diag-mic-visual" class="diag-visual hidden">
           <div class="diag-level-track">
             <div id="diag-mic-level" class="diag-level-fill"></div>
@@ -707,7 +739,7 @@
 
       <div class="guide-section">
         <div class="guide-sec-title">⚡ 性能测试</div>
-        <button id="btn-benchmark" class="btn btn-secondary btn-full">🚀 运行性能测试</button>
+        <button id="btn-benchmark" class="btn btn-secondary btn-full" aria-label="运行设备性能基准测试">🚀 运行性能测试</button>
         <div class="diag-benchmark hidden" id="diag-benchmark">
           <div class="diag-progress">
             <div class="diag-progress-bar" id="diag-progress-bar"></div>
@@ -716,7 +748,7 @@
         </div>
       </div>
 
-      <button class="btn btn-primary mt-16" id="btn-diagnostic-ok" style="width:100%">关闭</button>
+      <button class="btn btn-primary mt-16" id="btn-diagnostic-ok" style="width:100%" aria-label="关闭设备诊断对话框">关闭</button>
     </div>
   </div>
 
