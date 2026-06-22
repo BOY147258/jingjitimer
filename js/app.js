@@ -58,56 +58,84 @@ const recorder = new VideoRecorder();
 const sync     = new Sync();
 const detector = new FinishLineDetector();
 
-// ── 专业发令音效生成器 V2.0 ────────────────────────────
+// ── 专业发令音效生成器 V3.0 ────────────────────────────
 class StarterAudioGenerator {
   constructor() { this.audioCtx = null; this.initialized = false; }
   init() {
     if (this.initialized) return;
     try { this.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); this.initialized = true; } catch {}
   }
-  async playGeJiuWei() { // "各就位" - 升调合成音
+  async playGeJiuWei() { // "各就位" - 中文语音合成，音量加大
     this.init(); if (!this.audioCtx) return;
-    const ctx = this.audioCtx, now = ctx.currentTime;
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(440,now); osc.frequency.setValueAtTime(440,now+0.1); osc.frequency.setValueAtTime(523,now+0.15); osc.frequency.setValueAtTime(659,now+0.25);
-    gain.gain.setValueAtTime(0,now); gain.gain.linearRampToValueAtTime(0.85,now+0.05); gain.gain.setValueAtTime(0.85,now+0.35); gain.gain.exponentialRampToValueAtTime(0.001,now+0.5);
-    osc.connect(gain); gain.connect(ctx.destination); osc.start(now); osc.stop(now+0.5);
-    await new Promise(r=>setTimeout(r,500));
+    const utterance = new SpeechSynthesisUtterance('各就位');
+    const voices = speechSynthesis.getVoices();
+    const chineseVoice = voices.find(v => v.lang.includes('zh')) || voices.find(v => v.lang.includes('CN')) || voices[0];
+    if (chineseVoice) utterance.voice = chineseVoice;
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.8;   // 稍慢更清晰
+    utterance.pitch = 0.7;   // 低沉有力
+    utterance.volume = 1.5;  // 最大音量
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+    await new Promise(r => setTimeout(r, 800));
   }
-  async playYuBei() { // "预备" - 升调合成音
+  async playYuBei() { // "预备" - 中文语音合成，音量加大
     this.init(); if (!this.audioCtx) return;
-    const ctx = this.audioCtx, now = ctx.currentTime;
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(523,now); osc.frequency.setValueAtTime(523,now+0.1); osc.frequency.setValueAtTime(659,now+0.2); osc.frequency.setValueAtTime(784,now+0.3);
-    gain.gain.setValueAtTime(0,now); gain.gain.linearRampToValueAtTime(0.85,now+0.05); gain.gain.setValueAtTime(0.85,now+0.4); gain.gain.exponentialRampToValueAtTime(0.001,now+0.55);
-    osc.connect(gain); gain.connect(ctx.destination); osc.start(now); osc.stop(now+0.55);
-    await new Promise(r=>setTimeout(r,550));
+    const utterance = new SpeechSynthesisUtterance('预备');
+    const voices = speechSynthesis.getVoices();
+    const chineseVoice = voices.find(v => v.lang.includes('zh')) || voices.find(v => v.lang.includes('CN')) || voices[0];
+    if (chineseVoice) utterance.voice = chineseVoice;
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.8;
+    utterance.pitch = 0.7;
+    utterance.volume = 1.5;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+    await new Promise(r => setTimeout(r, 600));
   }
-  async playGunshot() { // 专业电子发令枪声
+  async playGunshot() { // 专业电子发令枪声 - 2000Hz/1.5秒/有力
     this.init(); if (!this.audioCtx) return;
     const ctx = this.audioCtx, now = ctx.currentTime;
-    // 1. 初始瞬态爆破
-    const nb = ctx.createBuffer(1,ctx.sampleRate*0.02,ctx.sampleRate), nd = nb.getChannelData(0);
-    for(let i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*Math.exp(-i/(ctx.sampleRate*0.005));
+    const FREQ = 2000, DURATION = 1.5;
+
+    // 1. 起始爆破 (0-40ms)
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for(let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.008));
     const ns = ctx.createBufferSource(); ns.buffer = nb;
-    const nf = ctx.createBiquadFilter(); nf.type='highpass'; nf.frequency.value=2000;
-    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.9,now); ng.gain.exponentialRampToValueAtTime(0.001,now+0.02);
+    const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 800;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(1.0, now); ng.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
     ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
-    // 2. 主枪声
-    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), mg = ctx.createGain(), lp = ctx.createBiquadFilter();
-    o1.type='sawtooth'; o1.frequency.setValueAtTime(150,now); o1.frequency.exponentialRampToValueAtTime(80,now+0.05);
-    o2.type='square'; o2.frequency.setValueAtTime(60,now); o2.frequency.exponentialRampToValueAtTime(40,now+0.08);
-    lp.type='lowpass'; lp.frequency.value=500;
-    mg.gain.setValueAtTime(0.7,now); mg.gain.exponentialRampToValueAtTime(0.001,now+0.15);
-    o1.connect(lp); o2.connect(lp); lp.connect(mg); mg.connect(ctx.destination);
-    // 3. 混响尾音
-    const ro = ctx.createOscillator(), rg = ctx.createGain();
-    ro.type='sine'; ro.frequency.setValueAtTime(80,now+0.01); ro.frequency.exponentialRampToValueAtTime(30,now+0.5);
-    rg.gain.setValueAtTime(0,now); rg.gain.linearRampToValueAtTime(0.3,now+0.02); rg.gain.exponentialRampToValueAtTime(0.001,now+0.6);
-    ro.connect(rg); rg.connect(ctx.destination);
-    ns.start(now); o1.start(now); o2.start(now); ro.start(now+0.01);
-    ns.stop(now+0.03); o1.stop(now+0.2); o2.stop(now+0.2); ro.stop(now+0.6);
-    await new Promise(r=>setTimeout(r,600));
+
+    // 2. 主体哨音 (0-1400ms) - 2000Hz正弦波
+    const mainOsc = ctx.createOscillator(), mainGain = ctx.createGain();
+    mainOsc.type = 'sine'; mainOsc.frequency.setValueAtTime(FREQ, now);
+    mainGain.gain.setValueAtTime(0, now);
+    mainGain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+    mainGain.gain.setValueAtTime(1.0, now + 1.3);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+    mainOsc.connect(mainGain); mainGain.connect(ctx.destination);
+
+    // 3. 泛音层 (0-1200ms) - 增加力度感
+    const harmOsc = ctx.createOscillator(), harmGain = ctx.createGain();
+    harmOsc.type = 'sine'; harmOsc.frequency.setValueAtTime(FREQ * 2, now);
+    harmGain.gain.setValueAtTime(0, now);
+    harmGain.gain.linearRampToValueAtTime(0.3, now + 0.02);
+    harmGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    harmOsc.connect(harmGain); harmGain.connect(ctx.destination);
+
+    // 4. 低频轰鸣 (0-300ms) - 增加厚重感
+    const lowOsc = ctx.createOscillator(), lowGain = ctx.createGain();
+    lowOsc.type = 'sine'; lowOsc.frequency.setValueAtTime(120, now); lowOsc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+    lowGain.gain.setValueAtTime(0.5, now); lowGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    lowOsc.connect(lowGain); lowGain.connect(ctx.destination);
+
+    // 启动
+    ns.start(now); mainOsc.start(now); harmOsc.start(now); lowOsc.start(now);
+    // 停止
+    ns.stop(now + 0.04); mainOsc.stop(now + 1.5); harmOsc.stop(now + 1.2); lowOsc.stop(now + 0.3);
+
+    await new Promise(r => setTimeout(r, 1600));
   }
   async playRecall() { // 召回信号
     this.init(); if (!this.audioCtx) return;
@@ -133,6 +161,14 @@ class StarterAudioGenerator {
   }
 }
 const starterAudio = new StarterAudioGenerator();
+
+// 预加载中文语音（防止首次使用时延迟）
+if (speechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+  // 提前触发一次语音加载
+  setTimeout(() => { speechSynthesis.cancel(); }, 100);
+}
 
 // ── Tone generator (no library needed) ────────────────
 let _audioCtx;
