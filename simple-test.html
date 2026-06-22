@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>竞迹计时器 - 简单版</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'PingFang SC', sans-serif;
+      background: #0a0d14;
+      color: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container { text-align: center; max-width: 400px; }
+    h1 { color: #ff6200; font-size: 28px; margin-bottom: 20px; }
+    .desc { color: #6b7a99; margin-bottom: 30px; line-height: 1.6; }
+    .btn {
+      display: inline-block;
+      padding: 15px 40px;
+      background: #ff6200;
+      color: white;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 600;
+      margin: 10px;
+    }
+    .btn:hover { background: #ff8033; }
+    .info {
+      margin-top: 40px;
+      padding: 20px;
+      background: #111827;
+      border-radius: 12px;
+      text-align: left;
+    }
+    .info h3 { color: #ff6200; margin-bottom: 10px; }
+    .info p { color: #6b7a99; font-size: 13px; margin: 5px 0; }
+    .status { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.ok { background: #00c853; }
+    .dot.fail { background: #f5222d; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏃 竞迹计时器</h1>
+    <p class="desc">
+      精准田径计时工具<br>
+      支持 AI 冲线识别、实时同步、离线使用
+    </p>
+
+    <a href="index.html" class="btn">打开完整版</a>
+
+    <div class="info">
+      <h3>🔧 故障排查</h3>
+      <div class="status">
+        <span class="dot ok"></span>
+        <span>主站: <a href="index.html" style="color:#00c853">index.html</a></span>
+      </div>
+      <p>如果页面打不开，请尝试：</p>
+      <p>1. 按 Ctrl+F5 强制刷新</p>
+      <p>2. 清除浏览器缓存</p>
+      <p>3. 使用 Chrome/Edge 浏览器</p>
+      <p>4. 开启浏览器开发者工具 (F12) 查看错误</p>
+    </div>
+  </div>
+</body>
+</html>
