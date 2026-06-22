@@ -340,31 +340,49 @@ window.addEventListener('unhandledrejection', (e) => {
 
 // ── Init ───────────────────────────────────────────────
 async function init() {
-  // 尝试恢复之前的会话状态
+  // 超时保护：5秒后强制显示界面
+  const timeoutId = setTimeout(() => {
+    console.warn('[Init] 初始化超时，强制显示界面');
+    forceShowInterface();
+  }, 5000);
+
   try {
-    const savedState = sessionStorage.getItem('jingji-session');
-    if (savedState) {
-      const parsed = JSON.parse(savedState);
-      if (parsed.roomCode) state.roomCode = parsed.roomCode;
+    // 尝试恢复之前的会话状态
+    try {
+      const savedState = sessionStorage.getItem('jingji-session');
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        if (parsed.roomCode) state.roomCode = parsed.roomCode;
+      }
+    } catch (e) { console.warn('[Init] 恢复会话状态失败:', e); }
+
+    loadSettings();
+    buildLaneInputs();
+    attachEventListeners();
+    applySettingsToDOM();
+    loadHistory();
+    timer.onChange(ms => { DOM.timerDisplay.textContent = PrecisionTimer.format(ms); });
+
+    // WeChat browser can't use camera/mic at all – tell user to open in real browser
+    if (isWeChat()) {
+      clearTimeout(timeoutId);
+      showWeChatWarning();
+      return;
     }
-  } catch {}
-
-  loadSettings();
-  buildLaneInputs();
-  attachEventListeners();
-  applySettingsToDOM();
-  loadHistory();
-  timer.onChange(ms => { DOM.timerDisplay.textContent = PrecisionTimer.format(ms); });
-  await sleep(400);
-  DOM.loading.classList.add('hidden');
-
-  // WeChat browser can't use camera/mic at all – tell user to open in real browser
-  if (isWeChat()) {
-    showWeChatWarning();
-    return;
+  } catch (e) {
+    console.error('[Init] 初始化错误:', e);
+  } finally {
+    clearTimeout(timeoutId);
+    forceShowInterface();
   }
+}
 
-  DOM.roleOverlay.classList.remove('hidden');
+function forceShowInterface() {
+  // 确保 loading 隐藏，角色选择显示
+  const loading = document.getElementById('loading');
+  const roleOverlay = document.getElementById('role-overlay');
+  if (loading) loading.classList.add('hidden');
+  if (roleOverlay) roleOverlay.classList.remove('hidden');
 }
 
 
