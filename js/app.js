@@ -2915,6 +2915,26 @@ function attachEventListeners() {
   // Practice mode
   $('btn-practice-mode')?.addEventListener('click', () => enterPracticeMode());
 
+  // 独立发令按钮
+  $('btn-gejiuwei')?.addEventListener('click', async () => {
+    audio.resume();
+    DOM.timerSub.textContent = '📢 各就位...';
+    await starterAudio.playGeJiuWei();
+    DOM.timerSub.textContent = '准备就绪';
+  });
+  $('btn-yubei')?.addEventListener('click', async () => {
+    audio.resume();
+    DOM.timerSub.textContent = '⚡ 预备...';
+    await starterAudio.playYuBei();
+    DOM.timerSub.textContent = '准备就绪';
+  });
+  $('btn-gunshot')?.addEventListener('click', async () => {
+    audio.resume();
+    DOM.timerSub.textContent = '🔫 枪声！';
+    await starterAudio.playGunshot();
+    DOM.timerSub.textContent = '准备就绪';
+  });
+
   // Race controls
   DOM.btnStart.addEventListener('click',  () => { audio.resume(); beginRace(); });
   DOM.btnStop.addEventListener('click',   () => endRace());
