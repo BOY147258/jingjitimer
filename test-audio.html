@@ -339,7 +339,7 @@
 
     // 完整发令序列
     async function testFullSequence() {
-      log('▶️ 开始国际标准发令序列...', 'info');
+      log('▶️ 发令序列开始...', 'info');
 
       // 各就位
       await testGeJiuWei();
@@ -349,17 +349,15 @@
       // 预备
       await testYuBei();
       await new Promise(r => setTimeout(r, 600));
-      log('⏳ 等待发令...', 'info');
 
-      // 随机等待 0.7-2.0秒（国际标准）
-      const waitTime = 700 + Math.random() * 1300;
-      log('⏳ 随机等待 ' + (waitTime/1000).toFixed(1) + '秒...', 'info');
+      // 0.4~0.9秒随机延迟（防止压枪）
+      const waitTime = 400 + Math.random() * 500;
       await new Promise(r => setTimeout(r, waitTime));
 
-      // 发令哨音
+      // 枪声
       await testHorn();
 
-      log('🎉 国际标准发令序列完成!', 'success');
+      log('✅ 发令完成！', 'success');
     }
   </script>
 </body>
