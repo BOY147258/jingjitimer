@@ -240,59 +240,69 @@
       log('✅ 预备 已播放', 'success');
     }
 
-    // 发令枪声 - 尖锐电子计时器声音
+    // 发令哨音 - 高频尖锐、短促有力、所有人都能听到
     async function testGunshot() {
-      log('🔫 播放: 枪声...', 'info');
+      log('🔫 播放: 发令哨音...', 'info');
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
 
-      // 电子发令枪声 - 尖锐的短促声音
-      // 1. 高频尖锐脉冲
+      // 高频哨音 - 3000Hz，尖锐刺耳，短促有力
+      // 1. 主哨音 - 高频正弦波
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
-      osc1.type = 'sawtooth';
-      osc1.frequency.setValueAtTime(2500, now);
-      osc1.frequency.exponentialRampToValueAtTime(500, now + 0.08);
-      gain1.gain.setValueAtTime(0.8, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(3000, now); // 高频哨音
+      osc1.frequency.setValueAtTime(3200, now + 0.05); // 轻微上滑更有力
+      gain1.gain.setValueAtTime(0, now);
+      gain1.gain.linearRampToValueAtTime(1.0, now + 0.01); // 立即达到最大音量
+      gain1.gain.setValueAtTime(1.0, now + 0.15); // 保持
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25); // 突然停止
       osc1.connect(gain1);
       gain1.connect(ctx.destination);
 
-      // 2. 中频轰鸣
+      // 2. 泛音层 - 让声音更尖锐有力
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
-      osc2.type = 'square';
-      osc2.frequency.setValueAtTime(200, now);
-      osc2.frequency.exponentialRampToValueAtTime(50, now + 0.15);
-      gain2.gain.setValueAtTime(0.6, now);
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(4500, now); // 更高频泛音
+      gain2.gain.setValueAtTime(0, now);
+      gain2.gain.linearRampToValueAtTime(0.4, now + 0.01);
       gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
       osc2.connect(gain2);
       gain2.connect(ctx.destination);
 
-      // 3. 噪声爆破
-      const bufferSize = ctx.sampleRate * 0.05;
-      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.01));
-      }
-      const noise = ctx.createBufferSource();
-      noise.buffer = buffer;
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.9, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-      noise.connect(noiseGain);
-      noiseGain.connect(ctx.destination);
+      // 3. 初始脉冲 - 开头那一下的爆发感
+      const osc3 = ctx.createOscillator();
+      const gain3 = ctx.createGain();
+      osc3.type = 'sawtooth';
+      osc3.frequency.setValueAtTime(5000, now);
+      osc3.frequency.exponentialRampToValueAtTime(3000, now + 0.03);
+      gain3.gain.setValueAtTime(0.5, now);
+      gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+      osc3.connect(gain3);
+      gain3.connect(ctx.destination);
+
+      // 4. 轻微颤音 - 让声音更有存在感
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.type = 'sine';
+      lfo.frequency.value = 30; // 30Hz颤音
+      lfoGain.gain.value = 50; // 轻微颤动
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc1.frequency);
 
       osc1.start(now);
       osc2.start(now);
-      noise.start(now);
-      osc1.stop(now + 0.1);
-      osc2.stop(now + 0.2);
-      noise.stop(now + 0.05);
+      osc3.start(now);
+      lfo.start(now);
 
-      await new Promise(r => setTimeout(r, 250));
-      log('🔫 枪声 已播放', 'success');
+      osc1.stop(now + 0.25);
+      osc2.stop(now + 0.2);
+      osc3.stop(now + 0.03);
+      lfo.stop(now + 0.25);
+
+      await new Promise(r => setTimeout(r, 300));
+      log('🔫 哨音 已播放 (3000Hz 高频哨声)', 'success');
     }
 
     // 召回音效
