@@ -8145,8 +8145,15 @@ function updateLaneStatusBar() {
 }
 
 // ── Service Worker ─────────────────────────────────────
+// 延迟注册 SW，等待页面完全加载后（避免干扰初始化）
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('[SW] Registered:', reg.active?.state))
+        .catch(err => console.warn('[SW] Registration failed:', err));
+    }, 3000); // 3秒延迟注册
+  });
 }
 
 // ── Boot ───────────────────────────────────────────────
