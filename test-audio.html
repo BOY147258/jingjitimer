@@ -95,7 +95,10 @@
 </head>
 <body>
   <div class="container">
-    <h1>🔊 国际标准电子发令音效测试</h1>
+    <h1>
+      🔊 国际标准电子发令音效
+      <span style="display:block;font-size:14px;color:#888;margin-top:8px">各就位 + 预备 + 电子枪声</span>
+    </h1>
 
     <div class="test-card">
       <div class="test-title">第一步：初始化音频系统</div>
@@ -116,10 +119,13 @@
     </div>
 
     <div class="test-card">
-      <div class="test-title">第三步：完整国际标准发令序列</div>
+      <div class="test-title">第三步：完整发令序列（含随机编排）</div>
       <button class="btn-all" onclick="testFullSequence()" id="btn4" disabled>
-        ▶️ 完整发令（各就位→预备→哨音）
+        ▶️ 完整发令（各就位→预备→电子枪声 + 随机等待）
       </button>
+      <p style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5)">
+        完整序列：各就位 → 等待 → 预备 → 随机0.7-2.0秒 → 枪声
+      </p>
     </div>
 
     <div class="status" id="status">
@@ -217,53 +223,118 @@
       log('✅ 预备 已播放', 'success');
     }
 
-    // 国际标准发令哨音
-    // 参数：2000Hz正弦波，1.5秒，渐入渐出
+    // 国际标准发令枪声
+    // 包含：起始爆破 + 主体哨音 + 混响尾音
+    // 2000Hz标准频率 + 有力的爆破起始
     async function testHorn() {
-      log('🏁 播放: 国际标准发令哨音 (2000Hz, 1.5秒)...', 'info');
+      log('🔫 播放: 电子发令枪声...', 'info');
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
 
-      // 国际标准参数
       const FREQ = 2000;      // 2000Hz 标准频率
-      const DURATION = 1.5;   // 1.5秒 标准时长
-      const RISE_TIME = 0.02; // 20ms 渐入
-      const FALL_TIME = 0.1;  // 100ms 渐出
+      const TOTAL_DURATION = 1.5;
 
-      // 主哨音 - 纯正弦波
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      // ========== 1. 起始爆破瞬态 (0-50ms) ==========
+      // 快速噪声爆破 - 模拟真实枪声的"啪"声
+      const blastLength = ctx.sampleRate * 0.05;
+      const blastBuffer = ctx.createBuffer(1, blastLength, ctx.sampleRate);
+      const blastData = blastBuffer.getChannelData(0);
+      for (let i = 0; i < blastLength; i++) {
+        // 指数衰减的噪声
+        blastData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.008));
+      }
+      const blast = ctx.createBufferSource();
+      blast.buffer = blastBuffer;
 
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(FREQ, now);
+      // 高通滤波 - 让爆破声更尖锐
+      const blastFilter = ctx.createBiquadFilter();
+      blastFilter.type = 'highpass';
+      blastFilter.frequency.value = 800;
 
-      // 音量包络：渐入 → 保持 → 渐出
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(1.0, now + RISE_TIME);      // 渐入
-      gain.gain.setValueAtTime(1.0, now + DURATION - FALL_TIME);     // 保持
-      gain.gain.exponentialRampToValueAtTime(0.001, now + DURATION);  // 渐出
+      // 爆破增益 - 立即达到最大然后快速衰减
+      const blastGain = ctx.createGain();
+      blastGain.gain.setValueAtTime(0.8, now);
+      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+      blast.connect(blastFilter);
+      blastFilter.connect(blastGain);
+      blastGain.connect(ctx.destination);
 
-      osc.start(now);
-      osc.stop(now + DURATION);
+      // ========== 2. 主体哨音 (0-1400ms) ==========
+      // 2000Hz 正弦波 - 国际标准频率
+      const mainOsc = ctx.createOscillator();
+      const mainGain = ctx.createGain();
 
-      // 添加轻微谐波增强（可选，让声音更饱满但不失真）
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(FREQ * 2, now); // 4000Hz 泛音
-      gain2.gain.setValueAtTime(0, now);
-      gain2.gain.linearRampToValueAtTime(0.15, now + RISE_TIME);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + DURATION);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now);
-      osc2.stop(now + DURATION);
+      mainOsc.type = 'sine';
+      mainOsc.frequency.setValueAtTime(FREQ, now);
 
-      await new Promise(r => setTimeout(r, DURATION * 1000 + 200));
-      log('🏁 哨音 已播放 (2000Hz, 1.5秒)', 'success');
+      // 音量包络：渐入(20ms) → 保持 → 渐出(150ms)
+      mainGain.gain.setValueAtTime(0, now);
+      mainGain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+      mainGain.gain.setValueAtTime(1.0, now + 1.25);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+
+      mainOsc.connect(mainGain);
+      mainGain.connect(ctx.destination);
+
+      // ========== 3. 泛音层 - 让声音更饱满有力 ==========
+      const harmOsc = ctx.createOscillator();
+      const harmGain = ctx.createGain();
+
+      harmOsc.type = 'sine';
+      harmOsc.frequency.setValueAtTime(FREQ * 2, now); // 4000Hz 泛音
+
+      harmGain.gain.setValueAtTime(0, now);
+      harmGain.gain.linearRampToValueAtTime(0.2, now + 0.02);
+      harmGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+      harmOsc.connect(harmGain);
+      harmGain.connect(ctx.destination);
+
+      // ========== 4. 低频轰鸣 - 增加厚重感 ==========
+      const lowOsc = ctx.createOscillator();
+      const lowGain = ctx.createGain();
+
+      lowOsc.type = 'sine';
+      lowOsc.frequency.setValueAtTime(100, now);
+      lowOsc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+
+      lowGain.gain.setValueAtTime(0.4, now);
+      lowGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+      lowOsc.connect(lowGain);
+      lowGain.connect(ctx.destination);
+
+      // ========== 5. 混响尾音 (1000-1500ms) ==========
+      const reverbOsc = ctx.createOscillator();
+      const reverbGain = ctx.createGain();
+
+      reverbOsc.type = 'sine';
+      reverbOsc.frequency.setValueAtTime(FREQ * 0.5, now + 0.8); // 低频混响
+
+      reverbGain.gain.setValueAtTime(0, now + 0.8);
+      reverbGain.gain.linearRampToValueAtTime(0.3, now + 0.9);
+      reverbGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+
+      reverbOsc.connect(reverbGain);
+      reverbGain.connect(ctx.destination);
+
+      // ========== 启动所有音源 ==========
+      blast.start(now);
+      mainOsc.start(now);
+      harmOsc.start(now);
+      lowOsc.start(now);
+      reverbOsc.start(now + 0.8);
+
+      // ========== 停止所有音源 ==========
+      blast.stop(now + 0.05);
+      mainOsc.stop(now + 1.4);
+      harmOsc.stop(now + 1.2);
+      lowOsc.stop(now + 0.4);
+      reverbOsc.stop(now + 1.5);
+
+      await new Promise(r => setTimeout(r, TOTAL_DURATION * 1000 + 200));
+      log('🔫 电子发令枪声 已播放 (2000Hz+爆破, 1.5秒)', 'success');
     }
 
     // 完整发令序列
