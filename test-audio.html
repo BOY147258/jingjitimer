@@ -169,7 +169,7 @@
       document.getElementById('btn4').disabled = false;
     }
 
-    // 中文语音
+    // 中文语音 - 各就位/预备 加大音量
     function speakChinese(text) {
       return new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(text);
@@ -178,9 +178,9 @@
                             voices.find(v => v.lang.includes('CN')) || voices[0];
         if (chineseVoice) utterance.voice = chineseVoice;
         utterance.lang = 'zh-CN';
-        utterance.rate = 0.85;
-        utterance.pitch = 0.75;
-        utterance.volume = 1.0;
+        utterance.rate = 0.8;   // 稍慢一点更清晰
+        utterance.pitch = 0.7;   // 偏低沉有力
+        utterance.volume = 1.5;  // 加大音量（最大）
         utterance.onend = resolve;
         utterance.onerror = resolve;
         speechSynthesis.speak(utterance);
@@ -201,72 +201,84 @@
       log('✅ 预备 完成', 'success');
     }
 
-    // 电子发令枪声 - 干脆利落，无尾音
+    // 电子发令枪声 - 有力持久
     async function testHorn() {
       log('🔫 播放: 发令枪声', 'info');
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
 
       const FREQ = 2000;  // 2000Hz 标准频率
-      const DURATION = 0.4; // 0.4秒，干脆短促
+      const DURATION = 1.5; // 1.5秒，持续有力
 
-      // 1. 起始爆破 (0-30ms)
-      const blastLength = ctx.sampleRate * 0.03;
+      // 1. 起始爆破 (0-40ms) - 更强力的爆破感
+      const blastLength = ctx.sampleRate * 0.04;
       const blastBuffer = ctx.createBuffer(1, blastLength, ctx.sampleRate);
       const blastData = blastBuffer.getChannelData(0);
       for (let i = 0; i < blastLength; i++) {
-        blastData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.005));
+        blastData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.008));
       }
       const blast = ctx.createBufferSource();
       blast.buffer = blastBuffer;
       const blastFilter = ctx.createBiquadFilter();
       blastFilter.type = 'highpass';
-      blastFilter.frequency.value = 1000;
+      blastFilter.frequency.value = 800;
       const blastGain = ctx.createGain();
-      blastGain.gain.setValueAtTime(0.9, now);
-      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+      blastGain.gain.setValueAtTime(1.0, now);  // 最大音量
+      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
       blast.connect(blastFilter);
       blastFilter.connect(blastGain);
       blastGain.connect(ctx.destination);
 
-      // 2. 主体哨音 (0-350ms) - 2000Hz正弦波
+      // 2. 主体哨音 (0-1400ms) - 2000Hz正弦波，持续有力
       const mainOsc = ctx.createOscillator();
       const mainGain = ctx.createGain();
       mainOsc.type = 'sine';
       mainOsc.frequency.setValueAtTime(FREQ, now);
-
-      // 渐入10ms，保持，然后突然停止（无尾音）
+      // 渐入 → 持续全音量 → 渐出
       mainGain.gain.setValueAtTime(0, now);
-      mainGain.gain.linearRampToValueAtTime(1.0, now + 0.01);
-      mainGain.gain.setValueAtTime(1.0, now + DURATION - 0.05);
-      mainGain.gain.exponentialRampToValueAtTime(0.001, now + DURATION);
+      mainGain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+      mainGain.gain.setValueAtTime(1.0, now + 1.3);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
 
       mainOsc.connect(mainGain);
       mainGain.connect(ctx.destination);
 
-      // 3. 泛音增强 (0-200ms)
+      // 3. 泛音层 (0-1200ms) - 增加力度感
       const harmOsc = ctx.createOscillator();
       const harmGain = ctx.createGain();
       harmOsc.type = 'sine';
-      harmOsc.frequency.setValueAtTime(FREQ * 2, now);
+      harmOsc.frequency.setValueAtTime(FREQ * 2, now); // 4000Hz
       harmGain.gain.setValueAtTime(0, now);
-      harmGain.gain.linearRampToValueAtTime(0.2, now + 0.01);
-      harmGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      harmGain.gain.linearRampToValueAtTime(0.3, now + 0.02);
+      harmGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
       harmOsc.connect(harmGain);
       harmGain.connect(ctx.destination);
+
+      // 4. 低频轰鸣 (0-300ms) - 增加厚重感
+      const lowOsc = ctx.createOscillator();
+      const lowGain = ctx.createGain();
+      lowOsc.type = 'sine';
+      lowOsc.frequency.setValueAtTime(120, now);
+      lowOsc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+      lowGain.gain.setValueAtTime(0.5, now);
+      lowGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      lowOsc.connect(lowGain);
+      lowGain.connect(ctx.destination);
 
       // 启动
       blast.start(now);
       mainOsc.start(now);
       harmOsc.start(now);
+      lowOsc.start(now);
 
       // 停止
-      blast.stop(now + 0.03);
-      mainOsc.stop(now + DURATION);
-      harmOsc.stop(now + 0.2);
+      blast.stop(now + 0.04);
+      mainOsc.stop(now + 1.5);
+      harmOsc.stop(now + 1.2);
+      lowOsc.stop(now + 0.3);
 
-      await new Promise(r => setTimeout(r, DURATION * 1000 + 100));
-      log('🔫 枪声 完成', 'success');
+      await new Promise(r => setTimeout(r, 1600));
+      log('🔫 枪声 完成 (2000Hz, 1.5秒)', 'success');
     }
 
     // 完整发令序列
