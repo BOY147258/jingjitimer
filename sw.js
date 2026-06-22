@@ -1,6 +1,7 @@
 /**
- * 竞迹计时系统 - Service Worker v28
+ * 竞迹计时系统 - Service Worker v29
  * 功能：离线缓存、增量更新、后台同步、推送通知
+ * 更新：强制刷新所有缓存，确保新功能生效
  *
  * 缓存策略：
  * - 核心资源：Stale-while-revalidate（快速响应 + 增量更新）
@@ -8,8 +9,8 @@
  * - API请求：Network-first（保证数据最新）
  */
 
-const CACHE_NAME = 'jingjitimer-v28';
-const OFFLINE_VERSION = '28';
+const CACHE_NAME = 'jingjitimer-v29';
+const OFFLINE_VERSION = '29';
 
 // 核心资源 - 安装时必须缓存
 const CORE_ASSETS = [
@@ -19,6 +20,8 @@ const CORE_ASSETS = [
   './qrcode.html',
   './simple.html',
   './starter-flow.html',
+  './test-finishline.html',
+  './test-compare.html',
   './css/app.css',
   './css/admin.css',
   './js/app.js',
@@ -29,12 +32,19 @@ const CORE_ASSETS = [
   './js/sync.js',
   './js/sync2.js',
   './js/finishline.js',
+  './js/finishline-v4.js',
   './js/api-client.js',
   './js/admin.js',
   './js/ai-detector.js',
   './js/shot-manager.js',
   './js/stats-analyzer.js',
+  './js/benchmark.js',
+  './js/clock-sync.js',
+  './js/start-audio.js',
+  './js/logger.js',
+  './js/config.js',
   './manifest.json',
+  './sw.js',
 ];
 
 // 外部依赖 - 使用 CDN 缓存
