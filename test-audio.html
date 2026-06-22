@@ -80,12 +80,9 @@
       border-radius: 12px;
       font-size: 13px;
     }
-    .system-info h3 {
-      color: #ff6200;
-      margin-bottom: 10px;
-      font-size: 14px;
-    }
+    .system-info h3 { color: #ff6200; margin-bottom: 10px; font-size: 14px; }
     .system-info p { margin: 4px 0; color: rgba(255,255,255,0.7); }
+    .system-info p span { color: #4CAF50; }
   </style>
 </head>
 <body>
@@ -93,48 +90,76 @@
     <h1>🔊 发令音效测试</h1>
 
     <div class="test-card">
-      <div class="test-title">单独测试每个音效</div>
+      <div class="test-title">1️⃣ 第一步：先点这个初始化语音系统</div>
+      <button onclick="initVoice()" style="width:100%;background:linear-gradient(135deg,#2196F3,#1976D2);color:#fff;padding:16px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer">
+        🔊 初始化语音系统（必须先点）
+      </button>
+    </div>
+
+    <div class="test-card">
+      <div class="test-title">2️⃣ 第二步：测试各个音效</div>
       <div class="btn-row">
-        <button class="btn-gejiuwei" onclick="testGeJiuWei()">📢 各就位</button>
-        <button class="btn-yubei" onclick="testYuBei()">⚡ 预备</button>
-        <button class="btn-gunshot" onclick="testGunshot()">🔫 枪声</button>
-        <button class="btn-recall" onclick="testRecall()">📢 召回</button>
+        <button class="btn-gejiuwei" onclick="testGeJiuWei()" id="btn1" disabled>📢 各就位</button>
+        <button class="btn-yubei" onclick="testYuBei()" id="btn2" disabled>⚡ 预备</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn-gunshot" onclick="testGunshot()" id="btn3" disabled>🔫 枪声</button>
+        <button class="btn-recall" onclick="testRecall()" id="btn4" disabled>📢 召回</button>
       </div>
     </div>
 
     <div class="test-card">
-      <div class="test-title">完整发令序列测试</div>
-      <div class="btn-row">
-        <button class="btn-all" onclick="testFullSequence()">▶️ 播放完整发令</button>
-      </div>
+      <div class="test-title">3️⃣ 第三步：完整发令序列</div>
+      <button class="btn-all" onclick="testFullSequence()" id="btn5" disabled>▶️ 播放完整发令（各就位→预备→枪声）</button>
     </div>
 
     <div class="status" id="status">
-      <div class="status-info">点击上面的按钮测试音效...</div>
+      <div class="status-info">请按顺序操作：先点"初始化语音系统"，然后再测试音效</div>
     </div>
 
     <div class="system-info">
       <h3>📱 系统信息</h3>
-      <p id="ua">User Agent: 加载中...</p>
-      <p id="audio-support">Web Audio API: 检测中...</p>
-      <p id="audio-context">AudioContext 状态: 未知</p>
+      <p>语音合成 (SpeechSynthesis): <span id="speech-support">检测中...</span></p>
+      <p>Web Audio API: <span id="audio-support">检测中...</span></p>
+      <p>可用的中文语音数量: <span id="voice-count">检测中...</span></p>
     </div>
   </div>
 
   <script>
-    // 显示系统信息
-    document.getElementById('ua').textContent = 'User Agent: ' + navigator.userAgent;
-
-    // 检测 Web Audio API 支持
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) {
-      document.getElementById('audio-support').textContent = 'Web Audio API: ✅ 支持';
+    // 检测系统支持
+    if ('speechSynthesis' in window) {
+      document.getElementById('speech-support').innerHTML = '✅ 支持';
     } else {
-      document.getElementById('audio-support').textContent = 'Web Audio API: ❌ 不支持';
-      log('❌ 您的浏览器不支持 Web Audio API，发令音效无法工作', 'error');
+      document.getElementById('speech-support').innerHTML = '❌ 不支持';
     }
 
-    // 日志函数
+    if (window.AudioContext || window.webkitAudioContext) {
+      document.getElementById('audio-support').innerHTML = '✅ 支持';
+    } else {
+      document.getElementById('audio-support').innerHTML = '❌ 不支持';
+    }
+
+    // 等待语音列表加载
+    function loadVoices() {
+      const voices = speechSynthesis.getVoices();
+      document.getElementById('voice-count').textContent = voices.length + ' 个';
+
+      // 找中文语音
+      const chineseVoices = voices.filter(v => v.lang.includes('zh'));
+      if (chineseVoices.length > 0) {
+        document.getElementById('voice-count').textContent =
+          chineseVoices.length + ' 个中文语音可用: ' + chineseVoices.map(v => v.name.substring(0, 20)).join(', ');
+      }
+    }
+
+    // 语音列表可能在加载完成后才可用
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    loadVoices();
+
+    let audioCtx = null;
+
     function log(msg, type = 'info') {
       const status = document.getElementById('status');
       const div = document.createElement('div');
@@ -142,251 +167,173 @@
       div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
       status.appendChild(div);
       status.scrollTop = status.scrollHeight;
-      console.log(msg);
     }
 
-    // 音频上下文
-    let audioCtx = null;
+    // 初始化语音系统
+    function initVoice() {
+      // 初始化 Web Audio API
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    function initAudio() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        document.getElementById('audio-context').textContent = 'AudioContext 状态: ' + audioCtx.state;
-        log('AudioContext 已初始化，状态: ' + audioCtx.state, 'success');
+      // 恢复 AudioContext（如果被暂停）
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
 
-        // iOS Safari 需要用户交互后才能播放
-        if (audioCtx.state === 'suspended') {
-          log('⚠️ AudioContext 被暂停，需要用户交互激活', 'error');
+      // 预加载语音（某些浏览器需要）
+      speechSynthesis.getVoices();
+      speechSynthesis.cancel(); // 清除之前的
+
+      log('✅ 语音系统已初始化', 'success');
+      log('🎤 Web Audio: ' + audioCtx.state, 'info');
+
+      // 启用按钮
+      document.getElementById('btn1').disabled = false;
+      document.getElementById('btn2').disabled = false;
+      document.getElementById('btn3').disabled = false;
+      document.getElementById('btn4').disabled = false;
+      document.getElementById('btn5').disabled = false;
+
+      // 测试语音是否能工作
+      const utterance = new SpeechSynthesisUtterance(' ');
+      utterance.volume = 0;
+      speechSynthesis.speak(utterance);
+    }
+
+    // 说中文
+    function speakChinese(text) {
+      return new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+
+        // 尝试找中文语音
+        const voices = speechSynthesis.getVoices();
+        const chineseVoice = voices.find(v => v.lang.includes('zh')) ||
+                            voices.find(v => v.lang.includes('CN')) ||
+                            voices[0];
+
+        if (chineseVoice) {
+          utterance.voice = chineseVoice;
         }
-      }
-      return audioCtx;
+
+        utterance.lang = 'zh-CN';
+        utterance.rate = 0.9;  // 稍慢一点，更有力
+        utterance.pitch = 0.8; // 稍低一点，更有男声感
+        utterance.volume = 1.0; // 最大音量
+
+        utterance.onend = resolve;
+        utterance.onerror = resolve;
+
+        speechSynthesis.speak(utterance);
+      });
     }
 
-    // 各就位音效
+    // 各就位 - 男声大声喊
     async function testGeJiuWei() {
-      log('播放: 各就位...', 'info');
-      const ctx = initAudio();
-
-      // 如果上下文暂停，先恢复
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-        log('AudioContext 已恢复', 'success');
-      }
-
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(440, now);
-      osc.frequency.setValueAtTime(440, now + 0.1);
-      osc.frequency.setValueAtTime(523, now + 0.15);
-      osc.frequency.setValueAtTime(659, now + 0.25);
-
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.85, now + 0.05);
-      gain.gain.setValueAtTime(0.85, now + 0.35);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.5);
-
-      log('✅ 各就位音效已播放', 'success');
+      log('📢 播放: 各就位...', 'info');
+      await speakChinese('各就位');
+      log('✅ 各就位 已播放', 'success');
     }
 
-    // 预备音效
+    // 预备 - 男声大声喊
     async function testYuBei() {
-      log('播放: 预备...', 'info');
-      const ctx = initAudio();
-
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(523, now);
-      osc.frequency.setValueAtTime(523, now + 0.1);
-      osc.frequency.setValueAtTime(659, now + 0.2);
-      osc.frequency.setValueAtTime(784, now + 0.3);
-
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.85, now + 0.05);
-      gain.gain.setValueAtTime(0.85, now + 0.4);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.55);
-
-      log('✅ 预备音效已播放', 'success');
+      log('⚡ 播放: 预备...', 'info');
+      await speakChinese('预备');
+      log('✅ 预备 已播放', 'success');
     }
 
-    // 发令枪声
+    // 发令枪声 - 尖锐电子计时器声音
     async function testGunshot() {
-      log('播放: 枪声...', 'info');
-      const ctx = initAudio();
-
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
+      log('🔫 播放: 枪声...', 'info');
+      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
 
-      // 1. 瞬态爆破
-      const nb = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
-      const nd = nb.getChannelData(0);
-      for (let i = 0; i < nd.length; i++) {
-        nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.005));
+      // 电子发令枪声 - 尖锐的短促声音
+      // 1. 高频尖锐脉冲
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(2500, now);
+      osc1.frequency.exponentialRampToValueAtTime(500, now + 0.08);
+      gain1.gain.setValueAtTime(0.8, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+
+      // 2. 中频轰鸣
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'square';
+      osc2.frequency.setValueAtTime(200, now);
+      osc2.frequency.exponentialRampToValueAtTime(50, now + 0.15);
+      gain2.gain.setValueAtTime(0.6, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+
+      // 3. 噪声爆破
+      const bufferSize = ctx.sampleRate * 0.05;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.01));
       }
-      const ns = ctx.createBufferSource();
-      ns.buffer = nb;
-      const nf = ctx.createBiquadFilter();
-      nf.type = 'highpass';
-      nf.frequency.value = 2000;
-      const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.9, now);
-      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(ctx.destination);
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.9, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      noise.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
 
-      // 2. 主枪声
-      const o1 = ctx.createOscillator();
-      const o2 = ctx.createOscillator();
-      const mg = ctx.createGain();
-      const lp = ctx.createBiquadFilter();
+      osc1.start(now);
+      osc2.start(now);
+      noise.start(now);
+      osc1.stop(now + 0.1);
+      osc2.stop(now + 0.2);
+      noise.stop(now + 0.05);
 
-      o1.type = 'sawtooth';
-      o1.frequency.setValueAtTime(150, now);
-      o1.frequency.exponentialRampToValueAtTime(80, now + 0.05);
-
-      o2.type = 'square';
-      o2.frequency.setValueAtTime(60, now);
-      o2.frequency.exponentialRampToValueAtTime(40, now + 0.08);
-
-      lp.type = 'lowpass';
-      lp.frequency.value = 500;
-
-      mg.gain.setValueAtTime(0.7, now);
-      mg.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-      o1.connect(lp);
-      o2.connect(lp);
-      lp.connect(mg);
-      mg.connect(ctx.destination);
-
-      // 3. 混响
-      const ro = ctx.createOscillator();
-      const rg = ctx.createGain();
-
-      ro.type = 'sine';
-      ro.frequency.setValueAtTime(80, now + 0.01);
-      ro.frequency.exponentialRampToValueAtTime(30, now + 0.5);
-
-      rg.gain.setValueAtTime(0, now);
-      rg.gain.linearRampToValueAtTime(0.3, now + 0.02);
-      rg.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-
-      ro.connect(rg);
-      rg.connect(ctx.destination);
-
-      ns.start(now);
-      o1.start(now);
-      o2.start(now);
-      ro.start(now + 0.01);
-
-      ns.stop(now + 0.03);
-      o1.stop(now + 0.2);
-      o2.stop(now + 0.2);
-      ro.stop(now + 0.6);
-
-      log('🔫 枪声已播放', 'success');
+      await new Promise(r => setTimeout(r, 250));
+      log('🔫 枪声 已播放', 'success');
     }
 
     // 召回音效
     async function testRecall() {
-      log('播放: 召回信号...', 'info');
-      const ctx = initAudio();
-
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
+      log('📢 播放: 召回信号...', 'info');
+      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
 
       for (let i = 0; i < 5; i++) {
-        const now = ctx.currentTime + i * 0.15;
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.value = 660;
-
-        g.gain.setValueAtTime(0.5, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-
-        osc.connect(g);
-        g.connect(ctx.destination);
-
-        osc.start(now);
-        osc.stop(now + 0.1);
+        await speakChinese('召回');
+        await new Promise(r => setTimeout(r, 100));
       }
 
-      log('📢 召回信号已播放', 'success');
+      log('📢 召回信号 已播放', 'success');
     }
 
     // 完整发令序列
     async function testFullSequence() {
-      log('开始完整发令序列测试...', 'info');
+      log('▶️ 开始完整发令序列...', 'info');
 
       // 各就位
       await testGeJiuWei();
-      await delay(600);
+      await new Promise(r => setTimeout(r, 600));
+
+      // 等待
+      log('⏳ 等待发令...', 'info');
+      await new Promise(r => setTimeout(r, 2000));
 
       // 预备
-      await delay(2000);
       await testYuBei();
-      await delay(600);
+      await new Promise(r => setTimeout(r, 600));
 
-      // 等待随机时间
-      await delay(1500 + Math.random() * 1000);
+      // 随机等待 (1.5-2.5秒)
+      const waitTime = 1500 + Math.random() * 1000;
+      log('⏳ 等待随机时间...', 'info');
+      await new Promise(r => setTimeout(r, waitTime));
 
       // 枪声
       await testGunshot();
 
-      log('🎉 完整发令序列测试完成!', 'success');
+      log('🎉 完整发令序列完成!', 'success');
     }
-
-    function delay(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    // 页面加载时检测
-    window.addEventListener('load', () => {
-      log('页面已加载', 'info');
-
-      // 尝试初始化 AudioContext（但会被暂停直到用户交互）
-      if (AudioContext) {
-        try {
-          const testCtx = new AudioContext();
-          log('Web Audio API 可用，状态: ' + testCtx.state, 'success');
-
-          // 注意：iOS Safari 上，这会创建一个暂停的上下文
-          // 必须在用户点击后才能调用 resume()
-
-          testCtx.close();
-        } catch (e) {
-          log('Web Audio API 初始化失败: ' + e.message, 'error');
-        }
-      }
-    });
   </script>
 </body>
 </html>
