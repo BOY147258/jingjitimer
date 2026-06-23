@@ -1,0 +1,739 @@
+/* ========================================
+   极速计时 - 校园体育计时器样式
+   极简设计 · 高效实用 · 适合学校场景
+   ======================================== */
+
+/* CSS Variables */
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --secondary: #64748b;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --gold: #fbbf24;
+  --silver: #94a3b8;
+  --bronze: #d97706;
+
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.4);
+}
+
+/* Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* App Container */
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========================================
+   Loading Screen
+   ======================================== */
+#loading {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.5s, visibility 0.5s;
+}
+
+#loading.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.loading-content {
+  text-align: center;
+}
+
+.loading-icon {
+  font-size: 64px;
+  animation: bounce 1s infinite;
+}
+
+.loading-text {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 16px 0;
+  background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.loading-bar {
+  width: 200px;
+  height: 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 auto;
+}
+
+.loading-progress {
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  border-radius: 2px;
+  animation: loading 1.5s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ========================================
+   Main Screen
+   ======================================== */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+#main.hidden {
+  display: none;
+}
+
+/* Top Bar */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  margin-bottom: 16px;
+}
+
+.logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.sync-status.connected .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+/* ========================================
+   Timer Display
+   ======================================== */
+.timer-section {
+  text-align: center;
+  padding: 32px 0;
+}
+
+.timer-display {
+  font-size: 56px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+  text-shadow: 0 0 30px rgba(96, 165, 250, 0.3);
+  transition: color 0.3s;
+}
+
+.timer-display.running {
+  color: var(--success);
+  text-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
+}
+
+.timer-display.finished {
+  color: var(--gold);
+  text-shadow: 0 0 30px rgba(251, 191, 36, 0.5);
+}
+
+.timer-status {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+/* ========================================
+   Mode Selector
+   ======================================== */
+.mode-selector {
+  margin-bottom: 20px;
+}
+
+.mode-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mode-btn {
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 20px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: var(--text-primary);
+}
+
+.mode-btn:active {
+  transform: scale(0.98);
+}
+
+.mode-btn.active {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.2);
+}
+
+.mode-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.mode-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mode-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ========================================
+   Connect Section
+   ======================================== */
+.connect-section {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.connect-form {
+  display: flex;
+  gap: 8px;
+}
+
+.connect-form input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 18px;
+  color: var(--text-primary);
+  text-align: center;
+  letter-spacing: 4px;
+  font-family: 'SF Mono', monospace;
+}
+
+.connect-form input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* ========================================
+   Settings Section
+   ======================================== */
+.settings-section {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--bg-card);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Distance Pills */
+.distance-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dist-pill {
+  background: var(--bg-card);
+  border: none;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dist-pill.active {
+  background: var(--primary);
+  color: white;
+}
+
+.dist-pill:active {
+  transform: scale(0.95);
+}
+
+/* Lane Control */
+.lane-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lane-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: none;
+  font-size: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lane-btn:active {
+  background: var(--primary);
+  transform: scale(0.95);
+}
+
+.lane-count {
+  font-size: 24px;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Start Mode Pills */
+.start-mode-pills {
+  display: flex;
+  gap: 6px;
+}
+
+.start-mode-pill {
+  background: var(--bg-card);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.start-mode-pill.active {
+  background: var(--primary);
+  color: white;
+}
+
+/* ========================================
+   Athletes Section
+   ======================================== */
+.athletes-section {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.athletes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.athlete-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.athlete-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.athlete-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: var(--text-primary);
+  padding: 4px 0;
+}
+
+.athlete-input:focus {
+  outline: none;
+}
+
+.athlete-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ========================================
+   Action Buttons
+   ======================================== */
+.action-section {
+  display: flex;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.btn {
+  flex: 1;
+  padding: 16px 24px;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-start {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  font-size: 18px;
+  padding: 20px;
+  flex: 1;
+}
+
+.btn-stop {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.btn-abort {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.btn.hidden {
+  display: none;
+}
+
+/* ========================================
+   Results Section
+   ======================================== */
+.results-section {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.results-section.hidden {
+  display: none;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.result-row.gold {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(217, 119, 6, 0.2));
+  border: 1px solid var(--gold);
+}
+
+.result-rank {
+  font-size: 24px;
+  width: 40px;
+  text-align: center;
+}
+
+.result-name {
+  flex: 1;
+  font-size: 14px;
+}
+
+.result-time {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'SF Mono', monospace;
+  color: var(--success);
+}
+
+.results-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ========================================
+   Finish View (Full Screen)
+   ======================================== */
+#finishView {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+#finishView.hidden {
+  display: none;
+}
+
+.finish-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+}
+
+.finish-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.finish-room {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.finish-video-wrap {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+#finishVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#finishCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.finish-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.7);
+}
+
+.finish-overlay.hidden {
+  display: none;
+}
+
+.finish-instruction {
+  text-align: center;
+  font-size: 16px;
+  color: white;
+}
+
+.finish-instruction small {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.finish-status {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  text-align: center;
+}
+
+.status-indicator {
+  font-size: 14px;
+  color: var(--success);
+}
+
+.finish-results {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.finish-actions {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+}
+
+/* ========================================
+   Toast
+   ======================================== */
+.toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  padding: 12px 24px;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  animation: toastIn 0.3s ease;
+}
+
+.toast.hidden {
+  display: none;
+}
+
+.toast.success {
+  border-left: 4px solid var(--success);
+}
+
+.toast.warning {
+  border-left: 4px solid var(--warning);
+}
+
+.toast.error {
+  border-left: 4px solid var(--danger);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ========================================
+   Utility Classes
+   ======================================== */
+.hidden {
+  display: none !important;
+}
+
+/* Responsive */
+@media (min-width: 768px) {
+  #main {
+    max-width: 600px;
+  }
+
+  .mode-buttons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

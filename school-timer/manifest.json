@@ -1,0 +1,22 @@
+{
+  "name": "极速计时 - 校园体育计时器",
+  "short_name": "极速计时",
+  "description": "专为中小学体育课、校运会设计的极简计时器",
+  "start_url": "/school-timer/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

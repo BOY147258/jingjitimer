@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>竞迹 · 校园计时器</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: rgba(0,0,0,0.2);
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid rgba(255,255,255,0.1);
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .header .subtitle {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 5px;
+    }
+
+    .content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .mode-selector {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 15px;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .mode-btn {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 16px;
+      padding: 20px;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .mode-btn:hover {
+      transform: translateY(-2px);
+      background: rgba(255,255,255,0.25);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    }
+
+    .mode-btn .icon {
+      font-size: 32px;
+    }
+
+    .mode-btn .info {
+      flex: 1;
+    }
+
+    .mode-btn .title {
+      font-size: 20px;
+      margin-bottom: 5px;
+    }
+
+    .mode-btn .desc {
+      font-size: 13px;
+      opacity: 0.8;
+      font-weight: 400;
+    }
+
+    .panel {
+      max-width: 500px;
+      margin: 0 auto;
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 15px;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 5px;
+      opacity: 0.9;
+    }
+
+    .input-group input,
+    .input-group select {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+
+    .input-group input::placeholder {
+      color: rgba(255,255,255,0.6);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 10px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #ff6200 0%, #ff8c42 100%);
+      color: #fff;
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,0.3);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .status-box {
+      background: rgba(0,0,0,0.3);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .timer {
+      font-size: 64px;
+      font-weight: 800;
+      font-family: 'Courier New', monospace;
+      text-align: center;
+      margin: 20px 0;
+      color: #2ecc71;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    }
+
+    .lane-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .lane-btn {
+      padding: 20px;
+      font-size: 18px;
+      font-weight: 700;
+      background: rgba(46, 204, 113, 0.8);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .lane-btn:active {
+      transform: scale(0.95);
+      background: rgba(46, 204, 113, 1);
+    }
+
+    .lane-btn.recorded {
+      background: rgba(149, 165, 166, 0.5);
+      opacity: 0.6;
+    }
+
+    .results-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .result-item {
+      background: rgba(255,255,255,0.1);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .result-lane {
+      font-size: 20px;
+      font-weight: 700;
+      width: 50px;
+    }
+
+    .result-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .result-time {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: 'Courier New', monospace;
+    }
+
+    .result-rank {
+      font-size: 14px;
+      opacity: 0.7;
+      margin-left: 10px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.9);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 1000;
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translate(-50%, -20px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .tip {
+      background: rgba(255, 193, 7, 0.2);
+      border: 1px solid rgba(255, 193, 7, 0.5);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🏃 竞迹 · 校园计时器</h1>
+    <div class="subtitle">为体育老师设计的简易电子计时系统</div>
+  </div>
+
+  <div class="content">
+    <!-- 模式选择 -->
+    <div id="mode-selector" class="mode-selector">
+      <button class="mode-btn" onclick="selectMode('lesson')">
+        <div class="icon">📱</div>
+        <div class="info">
+          <div class="title">体育课模式</div>
+          <div class="desc">单人操作 · 快速测试 · 适合日常教学</div>
+        </div>
+      </button>
+
+      <button class="mode-btn" onclick="selectMode('sports-day')">
+        <div class="icon">🏆</div>
+        <div class="info">
+          <div class="title">校运会模式</div>
+          <div class="desc">多设备协同 · 专业流程 · 适合正式比赛</div>
+        </div>
+      </button>
+
+      <button class="mode-btn" onclick="selectMode('observer')">
+        <div class="icon">📊</div>
+        <div class="info">
+          <div class="title">成绩公示</div>
+          <div class="desc">大屏显示 · 实时更新 · 观众查看</div>
+        </div>
+      </button>
+    </div>
+
+    <!-- 体育课模式 -->
+    <div id="lesson-panel" class="panel">
+      <div class="card">
+        <div class="tip">💡 适合课堂测试：老师一人操作，手动计时</div>
+
+        <div class="input-group">
+          <label>测试项目</label>
+          <select id="lesson-event">
+            <option value="50m">50米跑</option>
+            <option value="100m" selected>100米跑</option>
+            <option value="200m">200米跑</option>
+            <option value="400m">400米跑</option>
+            <option value="800m">800米跑</option>
+            <option value="1500m">1500米跑</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>参赛人数</label>
+          <select id="lesson-lanes">
+            <option value="4">4人</option>
+            <option value="6">6人</option>
+            <option value="8" selected>8人</option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" onclick="startLesson()">开始测试</button>
+        <button class="btn btn-secondary" onclick="backToMode()">返回</button>
+      </div>
+    </div>
+
+    <!-- 体育课 - 计时界面 -->
+    <div id="lesson-timing" class="panel">
+      <div class="card">
+        <div class="status-box">
+          <div class="status-row">
+            <span>项目</span>
+            <span id="timing-event">100米跑</span>
+          </div>
+          <div class="status-row">
+            <span>参赛人数</span>
+            <span id="timing-lanes">8人</span>
+          </div>
+        </div>
+
+        <div id="timing-timer" class="timer hidden">0:00.00</div>
+
+        <button id="btn-start-race" class="btn btn-success" onclick="startRace()">🔫 发令开始</button>
+        <div id="lane-buttons" class="lane-grid hidden">
+          <!-- 动态生成 -->
+        </div>
+        <button id="btn-finish-race" class="btn btn-primary hidden" onclick="finishRace()">✅ 完成计时</button>
+      </div>
+
+      <div id="timing-results" class="card hidden">
+        <h3 style="margin-bottom: 15px;">成绩</h3>
+        <div id="results-list" class="results-list"></div>
+        <button class="btn btn-success" onclick="exportResults()">📊 导出成绩</button>
+        <button class="btn btn-secondary" onclick="newRace()">➕ 新建测试</button>
+      </div>
+    </div>
+
+    <!-- 校运会模式 -->
+    <div id="sportsday-panel" class="panel">
+      <div class="card">
+        <div class="tip">💡 多设备协同：发令端、终点端、成绩端分别操作</div>
+
+        <button class="mode-btn" onclick="selectRole('starter')">
+          <div class="icon">🔫</div>
+          <div class="info">
+            <div class="title">发令端</div>
+            <div class="desc">老师使用 · 控制发令</div>
+          </div>
+        </button>
+
+        <button class="mode-btn" onclick="selectRole('finish')">
+          <div class="icon">🏁</div>
+          <div class="info">
+            <div class="title">终点端</div>
+            <div class="desc">终点裁判 · 记录成绩</div>
+          </div>
+        </button>
+
+        <button class="btn btn-secondary" onclick="backToMode()">返回</button>
+      </div>
+    </div>
+
+    <!-- 连接房间 -->
+    <div id="connect-panel" class="panel">
+      <div class="card">
+        <div class="input-group">
+          <label>房间号（4位数字）</label>
+          <input type="text" id="room-code" placeholder="例: 1234" maxlength="4" value="1234">
+        </div>
+
+        <button class="btn btn-success" onclick="connect()">连接</button>
+        <button class="btn btn-secondary" onclick="backToMode()">返回</button>
+      </div>
+    </div>
+
+    <!-- 发令端界面 -->
+    <div id="starter-panel" class="panel">
+      <div class="card">
+        <div class="status-box">
+          <div class="status-row">
+            <span>房间号</span>
+            <span id="starter-room">----</span>
+          </div>
+          <div class="status-row">
+            <span>状态</span>
+            <span id="starter-state">空闲</span>
+          </div>
+        </div>
+
+        <div id="starter-timer" class="timer hidden">0:00.00</div>
+
+        <button id="btn-create-shot" class="btn btn-primary" onclick="createShot()">➕ 创建枪次</button>
+        <button id="btn-fire" class="btn btn-danger hidden" onclick="fire()">🔫 发令</button>
+        <button id="btn-next-shot" class="btn btn-primary hidden" onclick="nextShot()">➡️ 下一枪</button>
+      </div>
+
+      <div id="starter-results" class="card hidden">
+        <h3 style="margin-bottom: 15px;">成绩</h3>
+        <div id="starter-results-list" class="results-list"></div>
+      </div>
+    </div>
+
+    <!-- 终点端界面 -->
+    <div id="finish-panel" class="panel">
+      <div class="card">
+        <div class="status-box">
+          <div class="status-row">
+            <span>房间号</span>
+            <span id="finish-room">----</span>
+          </div>
+          <div class="status-row">
+            <span>状态</span>
+            <span id="finish-state">等待发令</span>
+          </div>
+        </div>
+
+        <div id="finish-timer" class="timer hidden">0:00.00</div>
+
+        <div id="finish-lane-buttons" class="lane-grid">
+          <!-- 动态生成 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 成绩公示 -->
+    <div id="observer-panel" class="panel">
+      <div class="card">
+        <div class="status-box">
+          <div class="status-row">
+            <span>房间号</span>
+            <span id="observer-room">----</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>输入房间号</label>
+          <input type="text" id="observer-room-input" placeholder="例: 1234" maxlength="4">
+        </div>
+
+        <button class="btn btn-success" onclick="connectObserver()">连接</button>
+        <button class="btn btn-secondary" onclick="backToMode()">返回</button>
+      </div>
+
+      <div id="observer-results" class="card hidden">
+        <h3 style="margin-bottom: 15px;">实时成绩</h3>
+        <div id="observer-results-list" class="results-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 全局状态
+    let state = {
+      mode: null,
+      role: null,
+      roomCode: null,
+      ws: null,
+      startTime: null,
+      detections: [],
+      laneCount: 8,
+    };
+
+    // 模式选择
+    function selectMode(mode) {
+      state.mode = mode;
+      document.getElementById('mode-selector').classList.add('hidden');
+
+      if (mode === 'lesson') {
+        document.getElementById('lesson-panel').classList.add('active');
+      } else if (mode === 'sports-day') {
+        document.getElementById('sportsday-panel').classList.add('active');
+      } else if (mode === 'observer') {
+        document.getElementById('observer-panel').classList.add('active');
+      }
+    }
+
+    function backToMode() {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('mode-selector').classList.remove('hidden');
+    }
+
+    function selectRole(role) {
+      state.role = role;
+      document.getElementById('sportsday-panel').classList.remove('active');
+      document.getElementById('connect-panel').classList.add('active');
+    }
+
+    // 体育课模式
+    function startLesson() {
+      const event = document.getElementById('lesson-event').value;
+      const lanes = parseInt(document.getElementById('lesson-lanes').value);
+
+      state.laneCount = lanes;
+      document.getElementById('timing-event').textContent = event;
+      document.getElementById('timing-lanes').textContent = lanes + '人';
+
+      document.getElementById('lesson-panel').classList.remove('active');
+      document.getElementById('lesson-timing').classList.add('active');
+    }
+
+    function startRace() {
+      state.startTime = Date.now();
+      state.detections = [];
+
+      document.getElementById('btn-start-race').classList.add('hidden');
+      document.getElementById('timing-timer').classList.remove('hidden');
+      document.getElementById('lane-buttons').classList.remove('hidden');
+
+      // 生成道次按钮
+      const container = document.getElementById('lane-buttons');
+      container.innerHTML = '';
+      for (let i = 0; i < state.laneCount; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn';
+        btn.textContent = `道次 ${i + 1}`;
+        btn.onclick = () => recordLane(i);
+        btn.id = `lane-${i}`;
+        container.appendChild(btn);
+      }
+
+      // 启动计时器
+      startTimer('timing-timer');
+
+      // 显示完成按钮
+      document.getElementById('btn-finish-race').classList.remove('hidden');
+    }
+
+    function recordLane(lane) {
+      const finishTime = Date.now() - state.startTime;
+
+      state.detections.push({
+        lane,
+        finishTime,
+        timestamp: Date.now(),
+      });
+
+      // 标记按钮已记录
+      document.getElementById(`lane-${lane}`).classList.add('recorded');
+
+      showToast(`道次 ${lane + 1}: ${formatTime(finishTime)}`);
+    }
+
+    function finishRace() {
+      // 停止计时
+      state.startTime = null;
+
+      // 显示成绩
+      updateResults('results-list');
+      document.getElementById('timing-results').classList.remove('hidden');
+    }
+
+    function newRace() {
+      location.reload();
+    }
+
+    // WebSocket 连接
+    function connect() {
+      const roomCode = document.getElementById('room-code').value;
+      if (!roomCode) {
+        alert('请输入房间号');
+        return;
+      }
+
+      state.roomCode = roomCode;
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/ws?room=${roomCode}&role=${state.role}`;
+
+      state.ws = new WebSocket(wsUrl);
+
+      state.ws.onopen = () => {
+        showToast('✅ 连接成功');
+        document.getElementById('connect-panel').classList.remove('active');
+
+        if (state.role === 'starter') {
+          document.getElementById('starter-panel').classList.add('active');
+          document.getElementById('starter-room').textContent = roomCode;
+        } else if (state.role === 'finish') {
+          document.getElementById('finish-panel').classList.add('active');
+          document.getElementById('finish-room').textContent = roomCode;
+          setupFinishButtons();
+        }
+      };
+
+      state.ws.onmessage = (event) => {
+        handleMessage(JSON.parse(event.data));
+      };
+
+      state.ws.onerror = () => {
+        showToast('❌ 连接失败', 'error');
+      };
+    }
+
+    function connectObserver() {
+      const roomCode = document.getElementById('observer-room-input').value;
+      if (!roomCode) {
+        alert('请输入房间号');
+        return;
+      }
+
+      state.roomCode = roomCode;
+      document.getElementById('observer-room').textContent = roomCode;
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/ws?room=${roomCode}&role=observer`;
+
+      state.ws = new WebSocket(wsUrl);
+
+      state.ws.onopen = () => {
+        showToast('✅ 连接成功');
+        document.getElementById('observer-results').classList.remove('hidden');
+      };
+
+      state.ws.onmessage = (event) => {
+        handleMessage(JSON.parse(event.data));
+      };
+    }
+
+    function handleMessage(msg) {
+      if (msg.type === 'START_SCHEDULED') {
+        const delay = msg.startAt - Date.now();
+        showToast(`⏰ ${Math.round(delay/1000)}秒后发令`);
+
+        setTimeout(() => {
+          state.startTime = msg.startAt;
+          startTimer(state.role === 'starter' ? 'starter-timer' : 'finish-timer');
+          if (state.role === 'finish') {
+            document.getElementById('finish-state').textContent = '计时中';
+          }
+        }, delay);
+      }
+
+      if (msg.type === 'FINISH_DETECTED') {
+        state.detections.push(msg);
+        updateResults('starter-results-list');
+        updateResults('observer-results-list');
+        document.getElementById('starter-results').classList.remove('hidden');
+      }
+    }
+
+    // 发令端
+    function createShot() {
+      document.getElementById('starter-state').textContent = '准备';
+      document.getElementById('btn-create-shot').classList.add('hidden');
+      document.getElementById('btn-fire').classList.remove('hidden');
+    }
+
+    function fire() {
+      const startAt = Date.now() + 3000; // 3秒后发令
+
+      state.ws.send(JSON.stringify({
+        type: 'START_SCHEDULED',
+        startAt: startAt,
+      }));
+
+      document.getElementById('starter-state').textContent = '3秒后发令...';
+      document.getElementById('btn-fire').classList.add('hidden');
+
+      setTimeout(() => {
+        state.startTime = startAt;
+        document.getElementById('starter-state').textContent = '计时中';
+        document.getElementById('starter-timer').classList.remove('hidden');
+        startTimer('starter-timer');
+        playGunSound();
+      }, 3000);
+    }
+
+    function nextShot() {
+      location.reload();
+    }
+
+    // 终点端
+    function setupFinishButtons() {
+      const container = document.getElementById('finish-lane-buttons');
+      container.innerHTML = '';
+      for (let i = 0; i < 8; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn';
+        btn.textContent = `道次 ${i + 1}`;
+        btn.onclick = () => finishLane(i);
+        btn.id = `finish-lane-${i}`;
+        container.appendChild(btn);
+      }
+    }
+
+    function finishLane(lane) {
+      const finishTime = Date.now() - state.startTime;
+
+      state.ws.send(JSON.stringify({
+        type: 'FINISH_DETECTED',
+        lane: lane,
+        finishTime: finishTime,
+      }));
+
+      document.getElementById(`finish-lane-${lane}`).classList.add('recorded');
+      showToast(`🏁 道次 ${lane + 1}: ${formatTime(finishTime)}`);
+    }
+
+    // 计时器
+    function startTimer(elementId) {
+      const interval = setInterval(() => {
+        if (!state.startTime) {
+          clearInterval(interval);
+          return;
+        }
+
+        const elapsed = Date.now() - state.startTime;
+        document.getElementById(elementId).textContent = formatTime(elapsed);
+      }, 50);
+    }
+
+    // 更新成绩
+    function updateResults(elementId) {
+      const sorted = [...state.detections].sort((a, b) => a.finishTime - b.finishTime);
+
+      let html = '';
+      sorted.forEach((d, idx) => {
+        html += `
+          <div class="result-item">
+            <span class="result-lane">道${d.lane + 1}</span>
+            <span class="result-name">运动员${d.lane + 1}</span>
+            <span class="result-time">${formatTime(d.finishTime)}</span>
+            <span class="result-rank">#${idx + 1}</span>
+          </div>
+        `;
+      });
+
+      document.getElementById(elementId).innerHTML = html;
+    }
+
+    // 导出成绩
+    function exportResults() {
+      const sorted = [...state.detections].sort((a, b) => a.finishTime - b.finishTime);
+
+      let csv = '排名,道次,成绩\n';
+      sorted.forEach((d, idx) => {
+        csv += `${idx + 1},道次${d.lane + 1},${formatTime(d.finishTime)}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `成绩_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+
+      showToast('✅ 成绩已导出');
+    }
+
+    // 工具函数
+    function formatTime(ms) {
+      if (!ms && ms !== 0) return '--:--.--';
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      const c = Math.floor((ms % 1000) / 10);
+      return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`;
+    }
+
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function playGunSound() {
+      // 使用 Web Audio API 生成枪声
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.value = 100;
+      oscillator.type = 'sawtooth';
+
+      gainNode.gain.setValueAtTime(1, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.1);
+    }
+  </script>
+</body>
+</html>

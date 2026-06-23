@@ -1,0 +1,17 @@
+{
+  "name": "jingjin",
+  "version": "1.0.0",
+  "description": "竞迹 JingJi — 精准计时 · 智能田径",
+  "main": "serve.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ws-server.js",
+    "dev":   "node serve.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}
